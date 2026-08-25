@@ -327,6 +327,16 @@ export type StorageTransferScope =
   | { type: StorageTransferScopeType.Albums; albumIds: string[] }
   | { type: StorageTransferScopeType.Assets; assetIds: string[] };
 
+export interface INodeSyncPairJob {
+  pairingId: string;
+}
+
+export interface INodeSyncAssetJob {
+  pairingId: string;
+  /** Local asset for a push, remote asset for a pull. */
+  assetId: string;
+}
+
 export interface IStorageTransferJob {
   transferId: string;
 }
@@ -500,6 +510,13 @@ export type JobItem =
   | { name: JobName.StorageTargetExportAsset; data: IStorageTransferAssetJob }
   | { name: JobName.StorageTargetImportScan; data: IStorageTransferJob }
   | { name: JobName.StorageTargetImportObject; data: IStorageTransferObjectJob }
+
+  // Node sync
+  | { name: JobName.NodeSyncQueueAll; data?: IBaseJob }
+  | { name: JobName.NodeSyncPair; data: INodeSyncPairJob }
+  | { name: JobName.NodeSyncPushAsset; data: INodeSyncAssetJob }
+  | { name: JobName.NodeSyncPullAsset; data: INodeSyncAssetJob }
+  | { name: JobName.NodeSyncAlbums; data: INodeSyncPairJob }
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob };
