@@ -179,9 +179,7 @@ describe(SyncEngineService.name, () => {
 
       await sut.handlePair({ pairingId: 'pairing-1' });
 
-      const pushJobs = mocks.job.queue.mock.calls.filter(
-        ([job]: never[]) => (job as { name: string }).name === 'NodeSyncPushAsset',
-      );
+      const pushJobs = mocks.job.queue.mock.calls.filter(([job]) => job.name === 'NodeSyncPushAsset');
       expect(pushJobs).toHaveLength(2);
       expect(mocks.syncNode.markQueued).toHaveBeenCalledWith('pairing-1', 'push', ['a', 'b']);
     });
@@ -273,9 +271,7 @@ describe(SyncEngineService.name, () => {
 
       await sut.handlePair({ pairingId: 'pairing-1' });
 
-      const pushJobs = mocks.job.queue.mock.calls.filter(
-        ([job]: never[]) => (job as { name: string }).name === 'NodeSyncPushAsset',
-      );
+      const pushJobs = mocks.job.queue.mock.calls.filter(([job]) => job.name === 'NodeSyncPushAsset');
       expect(pushJobs).toHaveLength(0);
       // Not queued means not in the ledger, so they never look like outstanding work.
       expect(mocks.syncNode.markQueued).toHaveBeenCalledWith('pairing-1', 'push', []);
@@ -292,7 +288,7 @@ describe(SyncEngineService.name, () => {
 
       await sut.handlePair({ pairingId: 'pairing-1' });
 
-      const pullJobs = mocks.job.queue.mock.calls.filter(([job]: any[]) => job.name === 'NodeSyncPullAsset');
+      const pullJobs = mocks.job.queue.mock.calls.filter(([job]) => job.name === 'NodeSyncPullAsset');
       expect(pullJobs).toHaveLength(1);
       expect(pullJobs[0][0].data).toEqual({ pairingId: 'pairing-1', assetId: 'remote-b' });
     });
