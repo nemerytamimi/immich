@@ -23075,7 +23075,6 @@
           "StorageTargetImportObject",
           "NodeSyncQueueAll",
           "NodeSyncPair",
-          "NodeSyncPushAsset",
           "NodeSyncPullAsset",
           "NodeSyncAlbums"
         ],
@@ -29548,6 +29547,11 @@
             "description": "Send this user's assets to the peer",
             "type": "boolean"
           },
+          "remoteApiKey": {
+            "description": "An API key belonging to that user on the peer. Asset endpoints act as the key's owner, so the paired user's own key is required. Write-only: never returned.",
+            "minLength": 1,
+            "type": "string"
+          },
           "remoteUserId": {
             "description": "User on the peer to pair with",
             "format": "uuid",
@@ -29557,6 +29561,7 @@
         },
         "required": [
           "localUserId",
+          "remoteApiKey",
           "remoteUserId"
         ],
         "type": "object"
@@ -29639,6 +29644,11 @@
           "pushEnabled": {
             "description": "Send this user's assets to the peer",
             "type": "boolean"
+          },
+          "remoteApiKey": {
+            "description": "Replacement API key for the paired user",
+            "minLength": 1,
+            "type": "string"
           }
         },
         "type": "object"

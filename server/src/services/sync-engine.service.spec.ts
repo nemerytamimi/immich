@@ -25,6 +25,7 @@ const pairingStub = {
   localUserId: 'user-1',
   remoteUserId: 'remote-user-1',
   remoteUserEmail: 'alice@peer.example',
+  apiKey: 'paired-user-key',
   pushEnabled: true,
   pullEnabled: true,
   pushCursor: null,

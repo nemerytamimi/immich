@@ -443,6 +443,12 @@ export class SyncEngineService extends BaseService {
       return null;
     }
 
-    return { pairing, node, credentials: { url: node.url, apiKey: node.apiKey } satisfies NodeCredentials };
+    return {
+      pairing,
+      node,
+      // Asset endpoints act as whoever owns the key, so all data movement uses
+      // the paired user's own key. The node-level key is only for admin work.
+      credentials: { url: node.url, apiKey: pairing.apiKey } satisfies NodeCredentials,
+    };
   }
 }

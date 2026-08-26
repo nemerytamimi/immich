@@ -60,6 +60,12 @@ const SyncPairingCreateSchema = z
   .object({
     localUserId: z.uuidv4().describe('User on this node'),
     remoteUserId: z.uuidv4().describe('User on the peer to pair with'),
+    remoteApiKey: z
+      .string()
+      .min(1)
+      .describe(
+        "An API key belonging to that user on the peer. Asset endpoints act as the key's owner, so the paired user's own key is required. Write-only: never returned.",
+      ),
     pushEnabled: z.boolean().default(true).describe("Send this user's assets to the peer"),
     pullEnabled: z.boolean().default(true).describe("Bring the paired user's assets here"),
   })
@@ -67,6 +73,8 @@ const SyncPairingCreateSchema = z
 
 const SyncPairingUpdateSchema = z
   .object({
+    // Omitting the key keeps the stored one, so the UI never round-trips it.
+    remoteApiKey: z.string().min(1).optional().describe('Replacement API key for the paired user'),
     pushEnabled: z.boolean().optional().describe("Send this user's assets to the peer"),
     pullEnabled: z.boolean().optional().describe("Bring the paired user's assets here"),
   })

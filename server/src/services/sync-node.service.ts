@@ -141,11 +141,16 @@ export class SyncNodeService extends BaseService {
       throw new BadRequestException('That user is already paired with this node');
     }
 
+    // Asset endpoints act as whoever owns the key, so a key belonging to anyone
+    // else would silently file every pushed asset under the wrong account.
+    await this.assertKeyBelongsTo({ url: node.url, apiKey: dto.remoteApiKey }, remoteUser.id);
+
     const pairing = await this.syncNodeRepository.createPairing({
       nodeId: id,
       localUserId: dto.localUserId,
       remoteUserId: remoteUser.id,
       remoteUserEmail: remoteUser.email,
+      apiKey: dto.remoteApiKey,
       pushEnabled: dto.pushEnabled,
       pullEnabled: dto.pullEnabled,
     });
@@ -156,7 +161,14 @@ export class SyncNodeService extends BaseService {
   async updatePairing(pairingId: string, dto: SyncPairingUpdateDto): Promise<SyncPairingResponseDto> {
     const existing = await this.findPairingOrFail(pairingId);
 
+    if (dto.remoteApiKey) {
+      const node = await this.findOrFail(existing.nodeId);
+      await this.assertKeyBelongsTo({ url: node.url, apiKey: dto.remoteApiKey }, existing.remoteUserId);
+    }
+
     const pairing = await this.syncNodeRepository.updatePairing(pairingId, {
+      // An omitted key keeps the stored one.
+      apiKey: dto.remoteApiKey ?? existing.apiKey,
       pushEnabled: dto.pushEnabled ?? existing.pushEnabled,
       pullEnabled: dto.pullEnabled ?? existing.pullEnabled,
     });
@@ -220,6 +232,22 @@ export class SyncNodeService extends BaseService {
 
       this.logger.warn(`Sync node check failed: ${error?.message ?? error}`);
       return { ok: false, status, remoteVersion: null, error: error?.message ?? String(error) };
+    }
+  }
+
+  /** Confirms a key acts as the user it is meant to, rather than as an admin. */
+  private async assertKeyBelongsTo(credentials: NodeCredentials, expectedUserId: string): Promise<void> {
+    let me;
+    try {
+      me = await this.nodeClientRepository.getMe(credentials);
+    } catch (error: any) {
+      throw new BadRequestException(`That API key was not accepted by the node: ${error?.message ?? error}`);
+    }
+
+    if (me.id !== expectedUserId) {
+      throw new BadRequestException(
+        `That API key belongs to ${me.email}, not to the user being paired. Use an API key created by the paired user.`,
+      );
     }
   }
 

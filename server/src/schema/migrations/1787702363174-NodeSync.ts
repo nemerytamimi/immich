@@ -28,6 +28,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   "localUserId" uuid NOT NULL,
   "remoteUserId" uuid NOT NULL,
   "remoteUserEmail" character varying NOT NULL,
+  "apiKey" character varying NOT NULL,
   "pushEnabled" boolean NOT NULL DEFAULT true,
   "pullEnabled" boolean NOT NULL DEFAULT true,
   "pushCursor" uuid,

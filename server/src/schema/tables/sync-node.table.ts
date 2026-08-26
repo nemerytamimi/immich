@@ -84,6 +84,17 @@ export class SyncNodeUserTable {
   @Column()
   remoteUserEmail!: string;
 
+  /**
+   * An API key belonging to the paired user on the peer, not to its admin.
+   *
+   * Asset endpoints act as whoever owns the key: uploading with an admin key
+   * puts the asset in the admin's library and searching with it cannot see
+   * another user's assets. Moving data therefore has to use the paired user's
+   * own key. Never returned by the API.
+   */
+  @Column()
+  apiKey!: string;
+
   @Column({ type: 'boolean', default: true })
   pushEnabled!: Generated<boolean>;
 

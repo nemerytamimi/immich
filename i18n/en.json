@@ -445,6 +445,8 @@
     "sync_pairing_add": "Pair a user",
     "sync_pairing_add_description": "Choose a user here and the user on {name} they should stay in step with.",
     "sync_pairing_added": "User paired",
+    "sync_pairing_api_key": "That user's API key",
+    "sync_pairing_api_key_description": "An API key created by the paired user on the other server, under their own Account Settings → API Keys. An admin key will not work: uploads are filed under whoever owns the key.",
     "sync_pairing_local_user": "User on this server",
     "sync_pairing_never_synced": "Never synced",
     "sync_pairing_paused": "Paused",

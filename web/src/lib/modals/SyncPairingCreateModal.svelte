@@ -7,7 +7,7 @@
     type SyncNodeResponseDto,
     type UserAdminResponseDto,
   } from '@immich/sdk';
-  import { Field, FormModal, Select, Switch, Text } from '@immich/ui';
+  import { Field, FormModal, Input, Select, Switch, Text } from '@immich/ui';
   import { mdiAccountSyncOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -23,6 +23,7 @@
   let remoteUsers = $state<SyncNodeRemoteUserDto[]>([]);
   let localUserId = $state('');
   let remoteUserId = $state('');
+  let remoteApiKey = $state('');
   let pushEnabled = $state(true);
   let pullEnabled = $state(true);
   let loadError = $state('');
@@ -47,11 +48,17 @@
   );
 
   const onSubmit = async () => {
-    if (!localUserId || !remoteUserId) {
+    if (!localUserId || !remoteUserId || !remoteApiKey) {
       return;
     }
 
-    const success = await handleCreatePairing(node, { localUserId, remoteUserId, pushEnabled, pullEnabled });
+    const success = await handleCreatePairing(node, {
+      localUserId,
+      remoteUserId,
+      remoteApiKey,
+      pushEnabled,
+      pullEnabled,
+    });
     if (success) {
       onClose();
     }
@@ -81,6 +88,10 @@
 
     <Field label={$t('admin.sync_pairing_remote_user')} required>
       <Select bind:value={remoteUserId} options={remoteOptions} />
+    </Field>
+
+    <Field label={$t('admin.sync_pairing_api_key')} description={$t('admin.sync_pairing_api_key_description')} required>
+      <Input type="password" bind:value={remoteApiKey} autocomplete="new-password" />
     </Field>
 
     <Field label={$t('admin.sync_pairing_push')} description={$t('admin.sync_pairing_push_description')}>

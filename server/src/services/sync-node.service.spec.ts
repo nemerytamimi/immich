@@ -26,6 +26,7 @@ const pairingStub = {
   localUserId: 'user-1',
   remoteUserId: 'remote-user-1',
   remoteUserEmail: 'alice@remote.example',
+  apiKey: 'paired-user-key',
   pushEnabled: true,
   pullEnabled: true,
   pushCursor: null,
@@ -181,6 +182,7 @@ describe(SyncNodeService.name, () => {
         sut.createPairing('node-1', {
           localUserId: 'user-1',
           remoteUserId: 'nobody',
+          remoteApiKey: 'k',
           pushEnabled: true,
           pullEnabled: true,
         }),
@@ -194,6 +196,7 @@ describe(SyncNodeService.name, () => {
         sut.createPairing('node-1', {
           localUserId: 'user-1',
           remoteUserId: 'remote-user-1',
+          remoteApiKey: 'k',
           pushEnabled: true,
           pullEnabled: true,
         }),
@@ -204,9 +207,16 @@ describe(SyncNodeService.name, () => {
       mocks.syncNode.getPairings.mockResolvedValue([]);
       mocks.syncNode.createPairing.mockResolvedValue(pairingStub);
 
+      mocks.nodeClient.getMe.mockResolvedValue({
+        id: 'remote-user-1',
+        email: 'alice@remote.example',
+        name: 'Alice',
+      });
+
       await sut.createPairing('node-1', {
         localUserId: 'user-1',
         remoteUserId: 'remote-user-1',
+        remoteApiKey: 'paired-user-key',
         pushEnabled: true,
         pullEnabled: false,
       });
@@ -214,6 +224,36 @@ describe(SyncNodeService.name, () => {
       expect(mocks.syncNode.createPairing).toHaveBeenCalledWith(
         expect.objectContaining({ remoteUserEmail: 'alice@remote.example', pullEnabled: false }),
       );
+    });
+  });
+
+  describe('createPairing key ownership', () => {
+    it('should reject a key that acts as somebody other than the paired user', async () => {
+      mocks.syncNode.get.mockResolvedValue(nodeStub);
+      mocks.user.get.mockResolvedValue({ id: 'user-1' } as never);
+      mocks.nodeClient.searchUsers.mockResolvedValue([
+        { id: 'remote-user-1', email: 'alice@remote.example', name: 'Alice' },
+      ]);
+      mocks.syncNode.getPairings.mockResolvedValue([]);
+      // An admin key: accepted by the peer, but acts as the wrong account, which
+      // would silently file every pushed asset under the admin.
+      mocks.nodeClient.getMe.mockResolvedValue({
+        id: 'remote-admin',
+        email: 'admin@remote.example',
+        name: 'Admin',
+      });
+
+      await expect(
+        sut.createPairing('node-1', {
+          localUserId: 'user-1',
+          remoteUserId: 'remote-user-1',
+          remoteApiKey: 'admin-key',
+          pushEnabled: true,
+          pullEnabled: true,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.syncNode.createPairing).not.toHaveBeenCalled();
     });
   });
 

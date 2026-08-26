@@ -136,6 +136,11 @@ export class NodeClientRepository {
     return this.request<RemoteApiKey>(credentials, '/api-keys/me');
   }
 
+  /** Who a given key actually acts as, which is what asset endpoints key off. */
+  getMe(credentials: NodeCredentials): Promise<RemoteUser> {
+    return this.request<RemoteUser>(credentials, '/users/me');
+  }
+
   searchUsers(credentials: NodeCredentials): Promise<RemoteUser[]> {
     return this.request<RemoteUser[]>(credentials, '/admin/users?withDeleted=false');
   }

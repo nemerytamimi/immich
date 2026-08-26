@@ -691,6 +691,8 @@ export type SyncPairingUpdateDto = {
     pullEnabled?: boolean;
     /** Send this user's assets to the peer */
     pushEnabled?: boolean;
+    /** Replacement API key for the paired user */
+    remoteApiKey?: string;
 };
 export type SyncPairingResponseDto = {
     /** Creation date */
@@ -731,6 +733,8 @@ export type SyncPairingCreateDto = {
     pullEnabled?: boolean;
     /** Send this user's assets to the peer */
     pushEnabled?: boolean;
+    /** An API key belonging to that user on the peer. Asset endpoints act as the key's owner, so the paired user's own key is required. Write-only: never returned. */
+    remoteApiKey: string;
     /** User on the peer to pair with */
     remoteUserId: string;
 };
@@ -8620,7 +8624,6 @@ export enum JobName {
     StorageTargetImportObject = "StorageTargetImportObject",
     NodeSyncQueueAll = "NodeSyncQueueAll",
     NodeSyncPair = "NodeSyncPair",
-    NodeSyncPushAsset = "NodeSyncPushAsset",
     NodeSyncPullAsset = "NodeSyncPullAsset",
     NodeSyncAlbums = "NodeSyncAlbums"
 }

@@ -1019,7 +1019,6 @@ export enum JobName {
   // Node sync
   NodeSyncQueueAll = 'NodeSyncQueueAll',
   NodeSyncPair = 'NodeSyncPair',
-  NodeSyncPushAsset = 'NodeSyncPushAsset',
   NodeSyncPullAsset = 'NodeSyncPullAsset',
   NodeSyncAlbums = 'NodeSyncAlbums',
 }
