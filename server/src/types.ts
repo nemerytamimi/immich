@@ -382,6 +382,10 @@ export interface IIntegrityPathWithChecksumJob {
   items: { path: string; reportId: string | null; checksum?: string | null }[];
 }
 
+export interface IFacialRecognitionQueueAll extends INightlyJob {
+  clusterGroupId?: string;
+}
+
 export interface JobCounts {
   active: number;
   completed: number;
@@ -435,7 +439,7 @@ export type JobItem =
   // Facial Recognition
   | { name: JobName.AssetDetectFacesQueueAll; data: IBaseJob }
   | { name: JobName.AssetDetectFaces; data: IEntityJob }
-  | { name: JobName.FacialRecognitionQueueAll; data: INightlyJob }
+  | { name: JobName.FacialRecognitionQueueAll; data: IFacialRecognitionQueueAll }
   | { name: JobName.FacialRecognition; data: IDeferrableJob }
   | { name: JobName.PersonGenerateThumbnail; data: IPersonJob }
 
