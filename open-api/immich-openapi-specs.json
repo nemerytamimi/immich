@@ -20959,7 +20959,7 @@
             ]
           },
           "endDate": {
-            "description": "End date (latest asset)",
+            "description": "UTC representation of (local) end date (latest asset)",
             "format": "date-time",
             "type": "string"
           },
@@ -20990,7 +20990,7 @@
             "type": "boolean"
           },
           "startDate": {
-            "description": "Start date (earliest asset)",
+            "description": "UTC representation of (local) start date (earliest asset)",
             "format": "date-time",
             "type": "string"
           },
@@ -21366,12 +21366,14 @@
           },
           "latitude": {
             "description": "Latitude coordinate",
+            "format": "double",
             "maximum": 90,
             "minimum": -90,
             "type": "number"
           },
           "longitude": {
             "description": "Longitude coordinate",
+            "format": "double",
             "maximum": 180,
             "minimum": -180,
             "type": "number"
@@ -23608,6 +23610,7 @@
           "fNumber": {
             "default": null,
             "description": "F-number (aperture)",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -23622,6 +23625,7 @@
           "focalLength": {
             "default": null,
             "description": "Focal length in mm",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -23636,6 +23640,7 @@
           "latitude": {
             "default": null,
             "description": "GPS latitude",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -23648,6 +23653,7 @@
           "longitude": {
             "default": null,
             "description": "GPS longitude",
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
@@ -25774,32 +25780,40 @@
       "NumberFilter": {
         "properties": {
           "eq": {
+            "format": "double",
             "type": "number"
           },
           "gt": {
+            "format": "double",
             "type": "number"
           },
           "gte": {
+            "format": "double",
             "type": "number"
           },
           "in": {
             "items": {
+              "format": "double",
               "type": "number"
             },
             "minItems": 1,
             "type": "array"
           },
           "lt": {
+            "format": "double",
             "type": "number"
           },
           "lte": {
+            "format": "double",
             "type": "number"
           },
           "ne": {
+            "format": "double",
             "type": "number"
           },
           "notIn": {
             "items": {
+              "format": "double",
               "type": "number"
             },
             "minItems": 1,
@@ -25811,34 +25825,42 @@
       "NumberFilterNullable": {
         "properties": {
           "eq": {
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
           "gt": {
+            "format": "double",
             "type": "number"
           },
           "gte": {
+            "format": "double",
             "type": "number"
           },
           "in": {
             "items": {
+              "format": "double",
               "type": "number"
             },
             "minItems": 1,
             "type": "array"
           },
           "lt": {
+            "format": "double",
             "type": "number"
           },
           "lte": {
+            "format": "double",
             "type": "number"
           },
           "ne": {
+            "format": "double",
             "nullable": true,
             "type": "number"
           },
           "notIn": {
             "items": {
+              "format": "double",
               "type": "number"
             },
             "minItems": 1,
@@ -26591,10 +26613,12 @@
           },
           "latitude": {
             "description": "Latitude coordinate",
+            "format": "double",
             "type": "number"
           },
           "longitude": {
             "description": "Longitude coordinate",
+            "format": "double",
             "type": "number"
           },
           "name": {
@@ -27994,7 +28018,9 @@
         "properties": {
           "angle": {
             "description": "Rotation angle in degrees",
-            "type": "number"
+            "maximum": 270,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -33883,6 +33909,7 @@
           "latitude": {
             "description": "Array of latitude coordinates extracted from EXIF GPS data",
             "items": {
+              "format": "double",
               "nullable": true,
               "type": "number"
             },
@@ -33899,6 +33926,7 @@
           "localOffsetHours": {
             "description": "Array of UTC offset hours at the time each photo was taken. Positive values are east of UTC, negative values are west of UTC. Values may be fractional (e.g., 5.5 for +05:30, -9.75 for -09:45). Applying this offset to 'fileCreatedAt' will give you the time the photo was taken from the photographer's perspective.",
             "items": {
+              "format": "double",
               "type": "number"
             },
             "type": "array"
@@ -33906,6 +33934,7 @@
           "longitude": {
             "description": "Array of longitude coordinates extracted from EXIF GPS data",
             "items": {
+              "format": "double",
               "nullable": true,
               "type": "number"
             },
@@ -33929,6 +33958,7 @@
           "ratio": {
             "description": "Array of aspect ratios (width/height) for each asset",
             "items": {
+              "format": "double",
               "type": "number"
             },
             "type": "array"
@@ -34112,6 +34142,7 @@
           },
           "latitude": {
             "description": "Latitude coordinate",
+            "format": "double",
             "maximum": 90,
             "minimum": -90,
             "type": "number"
@@ -34125,6 +34156,7 @@
           },
           "longitude": {
             "description": "Longitude coordinate",
+            "format": "double",
             "maximum": 180,
             "minimum": -180,
             "type": "number"
