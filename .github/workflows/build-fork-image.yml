@@ -76,6 +76,7 @@ jobs:
             BUILD_IMAGE=${{ inputs.tag }}
             BUILD_SOURCE_REF=${{ github.ref_name }}
             BUILD_SOURCE_COMMIT=${{ github.sha }}
+            BUILD_REPOSITORY=${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
