@@ -17,6 +17,7 @@ import {
 import {
   JobName,
   Permission,
+  STORAGE_TRANSFER_FINISHED,
   StorageTargetKind,
   StorageTransferDirection,
   StorageTransferScopeType,
@@ -168,6 +169,95 @@ export class StorageTargetService extends BaseService {
       },
       dto.restore ? StorageTransferDirection.Restore : StorageTransferDirection.Offload,
     );
+  }
+
+  /**
+   * Stop a transfer, keeping it resumable. Jobs already on the queue are left
+   * alone: they drain without acting once they see the status, which is cheaper
+   * and far less error-prone than trying to pull them back out of the queue.
+   */
+  async pauseTransfer(id: string): Promise<StorageTransferResponseDto> {
+    const transfer = await this.findOrFailTransfer(id);
+
+    if (STORAGE_TRANSFER_FINISHED.has(transfer.status)) {
+      throw new BadRequestException(`A ${transfer.status} transfer cannot be paused`);
+    }
+
+    if (transfer.status === StorageTransferStatus.Paused) {
+      return mapStorageTransfer(transfer);
+    }
+
+    const updated = await this.storageTargetRepository.updateTransfer(id, {
+      status: StorageTransferStatus.Paused,
+    });
+
+    return mapStorageTransfer(updated);
+  }
+
+  /**
+   * Pick a paused transfer back up by re-queueing its walk.
+   *
+   * Every direction is idempotent -- an export skips what the ledger already
+   * holds, an offload skips what is already offloaded, a restore skips what is
+   * already local -- so resuming re-enumerates whatever is still outstanding
+   * instead of tracking a position. The counters restart with it, since they
+   * describe the run that is about to happen rather than the one that stopped.
+   */
+  async resumeTransfer(id: string): Promise<StorageTransferResponseDto> {
+    const transfer = await this.findOrFailTransfer(id);
+
+    if (transfer.status !== StorageTransferStatus.Paused) {
+      throw new BadRequestException(`Only a paused transfer can be resumed, this one is ${transfer.status}`);
+    }
+
+    const target = await this.findOrFailTarget(transfer.targetId);
+    if (!target.isEnabled) {
+      throw new BadRequestException('Storage target is disabled');
+    }
+
+    const updated = await this.storageTargetRepository.updateTransfer(id, {
+      status: StorageTransferStatus.Pending,
+      totalCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+      finishedAt: null,
+      error: null,
+    });
+
+    await this.jobRepository.queue({
+      name: QUEUE_JOB_BY_DIRECTION[transfer.direction],
+      data: { transferId: id },
+    });
+
+    return mapStorageTransfer(updated);
+  }
+
+  /**
+   * Stop a transfer for good. Whatever has already moved stays moved -- an
+   * offload that has completed for some assets is not undone -- so this ends the
+   * run rather than reversing it.
+   */
+  async cancelTransfer(id: string): Promise<StorageTransferResponseDto> {
+    const transfer = await this.findOrFailTransfer(id);
+
+    if (STORAGE_TRANSFER_FINISHED.has(transfer.status)) {
+      throw new BadRequestException(`A ${transfer.status} transfer cannot be cancelled`);
+    }
+
+    const updated = await this.storageTargetRepository.updateTransfer(id, {
+      status: StorageTransferStatus.Cancelled,
+      finishedAt: new Date(),
+    });
+
+    return mapStorageTransfer(updated);
+  }
+
+  private async findOrFailTransfer(id: string) {
+    const transfer = await this.storageTargetRepository.getTransfer(id);
+    if (!transfer) {
+      throw new NotFoundException('Transfer not found');
+    }
+    return transfer;
   }
 
   private async startTransfer(

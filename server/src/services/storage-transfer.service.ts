@@ -11,6 +11,7 @@ import {
   JobName,
   JobStatus,
   QueueName,
+  STORAGE_TRANSFER_STOPPED,
   StorageFolder,
   StorageTransferStatus,
 } from 'src/enum';
@@ -32,6 +33,9 @@ import { getRemoteCachePath } from 'src/utils/remote-cache';
 /** How long a cached remote original survives without being read. */
 const REMOTE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** How often a queueing walk re-reads its transfer to notice a pause or cancel. */
+const QUEUE_STOP_CHECK_INTERVAL = 500;
+
 @Injectable()
 export class StorageTransferService extends BaseService {
   @OnJob({ name: JobName.StorageTargetExportQueue, queue: QueueName.StorageTarget })
@@ -39,6 +43,11 @@ export class StorageTransferService extends BaseService {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
     if (!transfer) {
       this.logger.warn(`Transfer ${transferId} no longer exists, skipping`);
+      return JobStatus.Skipped;
+    }
+
+    if (STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
+      this.logger.debug(`Transfer ${transferId} is ${transfer.status}, not queueing work`);
       return JobStatus.Skipped;
     }
 
@@ -79,7 +88,10 @@ export class StorageTransferService extends BaseService {
   @OnJob({ name: JobName.StorageTargetExportAsset, queue: QueueName.StorageTarget })
   async handleExportAsset({ transferId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    if (!transfer || transfer.status === StorageTransferStatus.Cancelled) {
+    // A paused or cancelled transfer leaves its queued jobs in place; they drain
+    // without acting and without touching the counters, so a resume re-queues
+    // from a clean slate rather than racing whatever was still in flight.
+    if (!transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
       return JobStatus.Skipped;
     }
 
@@ -129,6 +141,11 @@ export class StorageTransferService extends BaseService {
     const target = await this.storageTargetRepository.get(transfer.targetId);
     if (!target) {
       this.logger.warn(`Storage target ${transfer.targetId} no longer exists, skipping import`);
+      return JobStatus.Skipped;
+    }
+
+    if (STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
+      this.logger.debug(`Transfer ${transferId} is ${transfer.status}, not queueing work`);
       return JobStatus.Skipped;
     }
 
@@ -193,7 +210,10 @@ export class StorageTransferService extends BaseService {
   @OnJob({ name: JobName.StorageTargetImportObject, queue: QueueName.StorageTarget })
   async handleImportObject({ transferId, remoteKey, size }: IStorageTransferObjectJob): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    if (!transfer || transfer.status === StorageTransferStatus.Cancelled) {
+    // A paused or cancelled transfer leaves its queued jobs in place; they drain
+    // without acting and without touching the counters, so a resume re-queues
+    // from a clean slate rather than racing whatever was still in flight.
+    if (!transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
       return JobStatus.Skipped;
     }
 
@@ -339,7 +359,10 @@ export class StorageTransferService extends BaseService {
   @OnJob({ name: JobName.StorageTargetOffloadAsset, queue: QueueName.StorageTarget })
   async handleOffloadAsset({ transferId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    if (!transfer || transfer.status === StorageTransferStatus.Cancelled) {
+    // A paused or cancelled transfer leaves its queued jobs in place; they drain
+    // without acting and without touching the counters, so a resume re-queues
+    // from a clean slate rather than racing whatever was still in flight.
+    if (!transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
       return JobStatus.Skipped;
     }
 
@@ -414,7 +437,10 @@ export class StorageTransferService extends BaseService {
   @OnJob({ name: JobName.StorageTargetRestoreAsset, queue: QueueName.StorageTarget })
   async handleRestoreAsset({ transferId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    if (!transfer || transfer.status === StorageTransferStatus.Cancelled) {
+    // A paused or cancelled transfer leaves its queued jobs in place; they drain
+    // without acting and without touching the counters, so a resume re-queues
+    // from a clean slate rather than racing whatever was still in flight.
+    if (!transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
       return JobStatus.Skipped;
     }
 
@@ -548,6 +574,11 @@ export class StorageTransferService extends BaseService {
       return JobStatus.Skipped;
     }
 
+    if (STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
+      this.logger.debug(`Transfer ${transferId} is ${transfer.status}, not queueing work`);
+      return JobStatus.Skipped;
+    }
+
     await this.storageTargetRepository.updateTransfer(transferId, {
       status: StorageTransferStatus.Running,
       startedAt: new Date(),
@@ -557,6 +588,14 @@ export class StorageTransferService extends BaseService {
     for await (const { id } of stream(transfer)) {
       await this.jobRepository.queue({ name: jobName, data: { transferId, assetId: id } });
       total++;
+
+      // Enumerating a large library takes a while, and an operator who pauses
+      // during it expects the queueing to stop too, not to finish first.
+      if (total % QUEUE_STOP_CHECK_INTERVAL === 0 && (await this.isStopped(transferId))) {
+        this.logger.log(`Transfer ${transferId} stopped after queueing ${total} asset(s)`);
+        await this.storageTargetRepository.updateTransfer(transferId, { totalCount: total });
+        return JobStatus.Skipped;
+      }
     }
 
     this.logger.log(`Queued ${total} asset(s) for ${transfer.direction} on storage target ${transfer.targetId}`);
@@ -573,6 +612,12 @@ export class StorageTransferService extends BaseService {
     }
 
     return JobStatus.Success;
+  }
+
+  /** Whether the transfer has been paused or cancelled since the job started. */
+  private async isStopped(transferId: string): Promise<boolean> {
+    const transfer = await this.storageTargetRepository.getTransfer(transferId);
+    return !transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status);
   }
 
   /** Upload an original and its sidecar, and record both in the ledger. */

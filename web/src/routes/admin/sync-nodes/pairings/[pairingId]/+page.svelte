@@ -105,7 +105,7 @@
     };
   });
 
-  const { SyncNow, Unpair } = $derived(getSyncPairingActions($t, pairing));
+  const { SyncNow, DiscardOutstanding, Unpair } = $derived(getSyncPairingActions($t, pairing));
 
   // Items that have never failed. The rest of what is outstanding is either being
   // retried or has run out of attempts.
@@ -134,7 +134,7 @@
     { title: node.name },
     { title: pairing.remoteUserEmail },
   ]}
-  actions={[SyncNow, Unpair]}
+  actions={[SyncNow, DiscardOutstanding, Unpair]}
 >
   <Container size="large" center class="my-4">
     <div class="flex flex-col gap-6" in:fade={{ duration: 500 }}>

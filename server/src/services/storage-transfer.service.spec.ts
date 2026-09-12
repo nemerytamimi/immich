@@ -341,6 +341,59 @@ describe(StorageTransferService.name, () => {
     });
   });
 
+  describe('pause and cancel gating', () => {
+    for (const status of [StorageTransferStatus.Paused, StorageTransferStatus.Cancelled]) {
+      it(`should not offload while the transfer is ${status}`, async () => {
+        setupOffload(mocks);
+        mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status });
+        mocks.storageTarget.getObjectByAsset.mockResolvedValue(objectStub);
+
+        await expect(sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+          JobStatus.Skipped,
+        );
+
+        // The local original is what matters here: a paused offload must not be
+        // the thing that deletes it.
+        expect(mocks.storage.unlink).not.toHaveBeenCalledWith(assetStub.originalPath);
+        expect(mocks.storageTarget.setOffloadedAt).not.toHaveBeenCalled();
+      });
+
+      it(`should leave the counters alone while ${status}`, async () => {
+        setupOffload(mocks);
+        mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status });
+
+        await sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' });
+
+        // Counting a skipped item would let a resumed run look finished before
+        // it had done anything.
+        expect(mocks.storageTarget.incrementTransferProgress).not.toHaveBeenCalled();
+      });
+
+      it(`should not queue any work while ${status}`, async () => {
+        mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status });
+
+        await expect(sut.handleOffloadQueue({ transferId: 'transfer-1' })).resolves.toBe(JobStatus.Skipped);
+
+        expect(mocks.job.queue).not.toHaveBeenCalled();
+        expect(mocks.storageTarget.streamAssetsForOffload).not.toHaveBeenCalled();
+      });
+    }
+
+    it('should still restore while running', async () => {
+      setupDownload(mocks);
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Running });
+      mocks.storageTarget.getAssetForExport.mockResolvedValue({
+        ...assetStub,
+        offloadedAt: new Date('2026-01-02'),
+      } as never);
+      mocks.storageTarget.getOffloadLocation.mockResolvedValue(locationStub as never);
+
+      await expect(sut.handleRestoreAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Success,
+      );
+    });
+  });
+
   describe('handleRestoreAsset', () => {
     const offloaded = { ...assetStub, offloadedAt: new Date('2026-01-02') };
 

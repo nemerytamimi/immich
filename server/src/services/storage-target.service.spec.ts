@@ -1,5 +1,11 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { StorageTargetKind, StorageTransferDirection, StorageTransferScopeType, StorageTransferStatus } from 'src/enum';
+import {
+  JobName,
+  StorageTargetKind,
+  StorageTransferDirection,
+  StorageTransferScopeType,
+  StorageTransferStatus,
+} from 'src/enum';
 import { StorageTargetService } from 'src/services/storage-target.service';
 import { newTestService, ServiceMocks } from 'test/utils';
 
@@ -97,6 +103,115 @@ describe(StorageTargetService.name, () => {
     it('should throw when the target does not exist', async () => {
       mocks.storageTarget.get.mockResolvedValue(void 0);
       await expect(sut.get('target-1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('transfer control', () => {
+    const transferStub = {
+      id: 'transfer-1',
+      targetId: targetStub.id,
+      ownerId: 'user-1',
+      direction: StorageTransferDirection.Offload,
+      status: StorageTransferStatus.Running,
+      scope: { type: StorageTransferScopeType.All } as const,
+      totalCount: 10,
+      completedCount: 4,
+      failedCount: 0,
+      startedAt: new Date('2026-01-01'),
+      finishedAt: null,
+      error: null,
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
+      updateId: 'update-1',
+    };
+
+    it('should pause a running transfer', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue(transferStub);
+      mocks.storageTarget.updateTransfer.mockResolvedValue({
+        ...transferStub,
+        status: StorageTransferStatus.Paused,
+      });
+
+      await sut.pauseTransfer('transfer-1');
+
+      expect(mocks.storageTarget.updateTransfer).toHaveBeenCalledWith('transfer-1', {
+        status: StorageTransferStatus.Paused,
+      });
+    });
+
+    it('should refuse to pause a transfer that has already finished', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({
+        ...transferStub,
+        status: StorageTransferStatus.Completed,
+      });
+
+      await expect(sut.pauseTransfer('transfer-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.storageTarget.updateTransfer).not.toHaveBeenCalled();
+    });
+
+    it('should resume by re-queueing the walk with the counters reset', async () => {
+      // The counters describe the run about to happen, not the one that stopped:
+      // every direction re-enumerates what is still outstanding.
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Paused });
+      mocks.storageTarget.get.mockResolvedValue(targetStub);
+      mocks.storageTarget.updateTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Pending });
+
+      await sut.resumeTransfer('transfer-1');
+
+      expect(mocks.storageTarget.updateTransfer).toHaveBeenCalledWith('transfer-1', {
+        status: StorageTransferStatus.Pending,
+        totalCount: 0,
+        completedCount: 0,
+        failedCount: 0,
+        finishedAt: null,
+        error: null,
+      });
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.StorageTargetOffloadQueue,
+        data: { transferId: 'transfer-1' },
+      });
+    });
+
+    it('should only resume a paused transfer', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue(transferStub);
+
+      await expect(sut.resumeTransfer('transfer-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('should not resume onto a disabled target', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Paused });
+      mocks.storageTarget.get.mockResolvedValue({ ...targetStub, isEnabled: false });
+
+      await expect(sut.resumeTransfer('transfer-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('should cancel a paused transfer', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Paused });
+      mocks.storageTarget.updateTransfer.mockResolvedValue({
+        ...transferStub,
+        status: StorageTransferStatus.Cancelled,
+      });
+
+      await sut.cancelTransfer('transfer-1');
+
+      expect(mocks.storageTarget.updateTransfer).toHaveBeenCalledWith('transfer-1', {
+        status: StorageTransferStatus.Cancelled,
+        finishedAt: expect.any(Date),
+      });
+    });
+
+    it('should refuse to cancel a transfer that has already finished', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Cancelled });
+
+      await expect(sut.cancelTransfer('transfer-1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should report a transfer that does not exist', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue(void 0);
+
+      await expect(sut.pauseTransfer('nope')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

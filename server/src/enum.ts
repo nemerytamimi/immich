@@ -417,10 +417,25 @@ export const StorageTransferDirectionSchema = z
 export enum StorageTransferStatus {
   Pending = 'pending',
   Running = 'running',
+  /** Stopped by an operator, and resumable: queued work drains without acting. */
+  Paused = 'paused',
   Completed = 'completed',
   Failed = 'failed',
   Cancelled = 'cancelled',
 }
+
+/** Statuses where queued jobs must drain without doing any work. */
+export const STORAGE_TRANSFER_STOPPED = new Set<StorageTransferStatus>([
+  StorageTransferStatus.Paused,
+  StorageTransferStatus.Cancelled,
+]);
+
+/** Statuses that have run to a conclusion and accept no further control. */
+export const STORAGE_TRANSFER_FINISHED = new Set<StorageTransferStatus>([
+  StorageTransferStatus.Completed,
+  StorageTransferStatus.Failed,
+  StorageTransferStatus.Cancelled,
+]);
 
 export const StorageTransferStatusSchema = z
   .enum(StorageTransferStatus)

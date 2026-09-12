@@ -3,6 +3,7 @@ import {
   createSyncPairing,
   deleteSyncNode,
   deleteSyncPairing,
+  cancelSyncPairingItems,
   retrySyncPairingItems,
   syncPairingNow,
   testSyncNode,
@@ -24,6 +25,7 @@ import {
   mdiPlusBoxOutline,
   mdiProgressClock,
   mdiSync,
+  mdiCloseCircleOutline,
   mdiTrashCanOutline,
 } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
@@ -95,7 +97,46 @@ export const getSyncPairingActions = ($t: MessageFormatter, pairing: SyncPairing
     onAction: () => handleDeletePairing(pairing),
   };
 
-  return { Details, SyncNow, Unpair };
+  const DiscardOutstanding: ActionItem = {
+    icon: mdiCloseCircleOutline,
+    title: $t('admin.sync_pairing_cancel'),
+    onAction: () => handleCancelPairingItems(pairing),
+  };
+
+  return { Details, SyncNow, DiscardOutstanding, Unpair };
+};
+
+/**
+ * Throws away the backlog without touching the pairing itself.
+ *
+ * Pausing a direction stops new work but keeps the backlog, which resumes with
+ * it. This is the other half, for when the queue is full of work that is no
+ * longer wanted. Confirmed, because the count is the only hint of how much is
+ * about to be dropped.
+ */
+export const handleCancelPairingItems = async (pairing: SyncPairingResponseDto) => {
+  const $t = await getFormatter();
+
+  const confirmed = await modalManager.showDialog({
+    title: $t('admin.sync_pairing_cancel'),
+    prompt: $t('admin.sync_pairing_cancel_prompt', { values: { name: pairing.remoteUserEmail } }),
+    confirmText: $t('admin.sync_pairing_cancel'),
+    confirmColor: 'danger',
+  });
+
+  if (!confirmed) {
+    return false;
+  }
+
+  try {
+    const { count } = await cancelSyncPairingItems({ id: pairing.id, syncPairingCancelDto: {} });
+    toastManager.info($t('admin.sync_pairing_cancelled', { values: { count } }));
+    eventManager.emit('SyncNodeUpdate', { id: pairing.nodeId } as SyncNodeResponseDto);
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_cancel_sync_items'));
+    return false;
+  }
 };
 
 export const handleCreateSyncNode = async (dto: SyncNodeCreateDto) => {
