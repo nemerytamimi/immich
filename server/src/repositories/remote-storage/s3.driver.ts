@@ -10,6 +10,7 @@ import { Readable } from 'node:stream';
 import { StorageTargetKind } from 'src/enum';
 import {
   assertSafeKey,
+  describeRemoteError,
   DriverInput,
   joinKey,
   RemoteObject,
@@ -64,16 +65,26 @@ export class S3Driver implements RemoteStorageDriver {
 
   async *list(prefix?: string): AsyncGenerator<RemoteObject[]> {
     let continuationToken: string | undefined;
+    const listPrefix = joinKey(this.prefix, prefix) || undefined;
 
     do {
-      const response = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: this.bucket,
-          Prefix: joinKey(this.prefix, prefix) || undefined,
-          MaxKeys: LIST_PAGE_SIZE,
-          ContinuationToken: continuationToken,
-        }),
-      );
+      let response;
+      try {
+        response = await this.client.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucket,
+            Prefix: listPrefix,
+            MaxKeys: LIST_PAGE_SIZE,
+            ContinuationToken: continuationToken,
+          }),
+        );
+      } catch (error: any) {
+        // Which bucket and prefix were being walked is the first thing anyone
+        // needs, and the SDK error carries neither.
+        throw new Error(`Failed to list s3://${this.bucket}/${listPrefix ?? ''}: ${describeRemoteError(error)}`, {
+          cause: error,
+        });
+      }
 
       const objects = (response.Contents ?? [])
         // A key ending in `/` is a directory placeholder, not a file.

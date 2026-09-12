@@ -15,6 +15,7 @@ import {
   StorageTransferStatus,
 } from 'src/enum';
 import { StorageTargetRef } from 'src/repositories/remote-storage.repository';
+import { describeRemoteError } from 'src/repositories/remote-storage/driver';
 import { BaseService } from 'src/services/base.service';
 import {
   IBaseJob,
@@ -163,11 +164,12 @@ export class StorageTransferService extends BaseService {
         }
       }
     } catch (error: any) {
-      this.logger.error(`Failed to scan storage target ${target.id}: ${error}`, error?.stack);
+      const detail = describeRemoteError(error);
+      this.logger.error(`Failed to scan storage target "${target.name}" (${target.id}): ${detail}`, error?.stack);
       await this.storageTargetRepository.updateTransfer(transferId, {
         status: StorageTransferStatus.Failed,
         finishedAt: new Date(),
-        error: error?.message ?? String(error),
+        error: detail,
       });
       return JobStatus.Failed;
     }
