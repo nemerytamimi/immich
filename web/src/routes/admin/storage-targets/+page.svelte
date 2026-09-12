@@ -8,7 +8,13 @@
     getStorageTargetsActions,
     storageTargetKindLabel,
   } from '$lib/services/storage-target.service';
-  import { StorageTargetKind, type StorageTargetResponseDto } from '@immich/sdk';
+  import {
+    getStorageTargetTransfers,
+    StorageTargetKind,
+    StorageTransferStatus,
+    type StorageTargetResponseDto,
+    type StorageTransferResponseDto,
+  } from '@immich/sdk';
   import {
     Badge,
     CommandPaletteDefaultProvider,
@@ -23,6 +29,7 @@
     TableRow,
     Text,
   } from '@immich/ui';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
   import type { PageData } from './$types';
@@ -34,13 +41,72 @@
 
   const { data }: Props = $props();
 
-  const targets = $derived(data.targets);
-  const transfers = $derived(data.transfers);
+  /** Often enough to watch a transfer move, rarely enough to be cheap. */
+  const REFRESH_INTERVAL_MS = 5000;
 
-  const onStorageTargetUpdate = () => invalidate('app:storage-targets');
+  /** Ticks between refreshes when nothing is moving, so 30s at the interval above. */
+  const IDLE_REFRESH_TICKS = 6;
+
+  const targets = $derived(data.targets);
+
+  let polled = $state<Record<string, StorageTransferResponseDto[]>>();
+
+  // A poll speaks only for the targets it was made against, so adding or removing
+  // one falls back to what the page loaded until the next tick lands.
+  const transfers = $derived(polled && targets.every(({ id }) => id in polled!) ? polled : data.transfers);
+
+  /** Only pending and running transfers have counters that move. */
+  const isMoving = $derived(
+    Object.values(transfers).some((list) =>
+      list.some(({ status }) => status === StorageTransferStatus.Running || status === StorageTransferStatus.Pending),
+    ),
+  );
+
+  const refresh = async () => {
+    try {
+      const entries = await Promise.all(
+        targets.map(async ({ id }) => [id, await getStorageTargetTransfers({ id })] as const),
+      );
+      polled = Object.fromEntries(entries);
+    } catch {
+      // A failed tick leaves the last good numbers on screen; the next one tries again.
+    }
+  };
+
+  /**
+   * Watch closely while something is moving, and idle slowly when nothing is.
+   *
+   * The slow cadence is not decoration: a transfer started from another session
+   * would otherwise never appear here, because with nothing moving there would
+   * be nothing to prompt a refresh. Costing one round-trip per target, polling a
+   * quiet server every five seconds forever is not worth paying for that.
+   */
+  onMount(() => {
+    let ticks = 0;
+
+    const interval = setInterval(() => {
+      ticks++;
+      if (isMoving || ticks % IDLE_REFRESH_TICKS === 0) {
+        void refresh();
+      }
+    }, REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  });
+
+  const onStorageTargetUpdate = () => {
+    polled = undefined;
+    return invalidate('app:storage-targets');
+  };
+
   // Pausing, resuming or cancelling changes a transfer's status and counters,
-  // which are part of the same page load as the targets themselves.
-  const onStorageTransferUpdate = () => invalidate('app:storage-targets');
+  // which are part of the same page load as the targets themselves. The polled
+  // copy is dropped so the reloaded data shows immediately rather than being
+  // shadowed until the next tick.
+  const onStorageTransferUpdate = () => {
+    polled = undefined;
+    return invalidate('app:storage-targets');
+  };
 
   const { Create } = $derived(getStorageTargetsActions($t));
 
