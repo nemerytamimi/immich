@@ -129,6 +129,7 @@ export enum Permission {
   AssetShare = 'asset.share',
   AssetView = 'asset.view',
   AssetDownload = 'asset.download',
+  AssetOffload = 'asset.offload',
   AssetUpload = 'asset.upload',
   AssetCopy = 'asset.copy',
   AssetDerive = 'asset.derive',
@@ -402,6 +403,10 @@ export const StorageTransferScopeTypeSchema = z
 export enum StorageTransferDirection {
   Export = 'export',
   Import = 'import',
+  /** Upload, verify, then drop the local original. The asset stays in the library. */
+  Offload = 'offload',
+  /** Pull an offloaded original back onto local disk. */
+  Restore = 'restore',
 }
 
 export const StorageTransferDirectionSchema = z
@@ -436,6 +441,8 @@ export const SharedLinkTypeSchema = z.enum(SharedLinkType).describe('Shared link
 
 export enum StorageFolder {
   EncodedVideo = 'encoded-video',
+  /** Read-through cache for originals whose only copy lives on a storage target. */
+  RemoteCache = 'remote-cache',
   Library = 'library',
   Upload = 'upload',
   Profile = 'profile',
@@ -1037,6 +1044,12 @@ export enum JobName {
   StorageTargetExportAsset = 'StorageTargetExportAsset',
   StorageTargetImportScan = 'StorageTargetImportScan',
   StorageTargetImportObject = 'StorageTargetImportObject',
+  StorageTargetOffloadQueue = 'StorageTargetOffloadQueue',
+  StorageTargetOffloadAsset = 'StorageTargetOffloadAsset',
+  StorageTargetRestoreQueue = 'StorageTargetRestoreQueue',
+  StorageTargetRestoreAsset = 'StorageTargetRestoreAsset',
+  StorageTargetObjectDelete = 'StorageTargetObjectDelete',
+  StorageTargetCacheCleanup = 'StorageTargetCacheCleanup',
 
   // Node sync
   NodeSyncQueueAll = 'NodeSyncQueueAll',

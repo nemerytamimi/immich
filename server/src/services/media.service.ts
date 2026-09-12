@@ -192,7 +192,7 @@ export class MediaService extends BaseService {
 
   @OnJob({ name: JobName.AssetGenerateThumbnails, queue: QueueName.ThumbnailGeneration })
   async handleGenerateThumbnails({ id }: JobOf<JobName.AssetGenerateThumbnails>): Promise<JobStatus> {
-    const asset = await this.assetJobRepository.getForGenerateThumbnailJob(id);
+    let asset = await this.assetJobRepository.getForGenerateThumbnailJob(id);
     const config = await this.getConfig({ withCache: true });
 
     if (!asset) {
@@ -204,6 +204,10 @@ export class MediaService extends BaseService {
       this.logger.verbose(`Thumbnail generation skipped for asset ${id}: not visible`);
       return JobStatus.Skipped;
     }
+
+    // Regenerating thumbnails needs the original, which for an offloaded asset
+    // means pulling it back through the remote cache first.
+    asset = { ...asset, originalPath: await this.resolveOriginalPath(asset) };
 
     let generated: Awaited<ReturnType<MediaService['generateImageThumbnails']>>;
     if (asset.type === AssetType.Video || asset.originalFileName.toLowerCase().endsWith('.gif')) {

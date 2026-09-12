@@ -71,6 +71,12 @@ describe(MaintenanceService.name, () => {
             },
             {
               "files": 2,
+              "folder": "remote-cache",
+              "readable": true,
+              "writable": false,
+            },
+            {
+              "files": 2,
               "folder": "library",
               "readable": true,
               "writable": false,

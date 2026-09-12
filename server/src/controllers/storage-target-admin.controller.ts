@@ -118,6 +118,39 @@ export class StorageTargetAdminController {
     return this.service.startImport(id, dto);
   }
 
+  @Post(':id/offload')
+  @Authenticated({ permission: Permission.AdminStorageTargetUpdate, admin: true })
+  @Endpoint({
+    summary: 'Offload assets to a storage target',
+    description:
+      "Queue a transfer that uploads a user's original files to the target and then removes the local copies. " +
+      'The assets stay in the library: thumbnails, metadata and album membership are untouched, and the originals ' +
+      'are fetched back from the target on demand.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  offloadToStorageTarget(
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: StorageTransferCreateDto,
+  ): Promise<StorageTransferResponseDto> {
+    return this.service.startOffload(id, dto);
+  }
+
+  @Post(':id/restore')
+  @Authenticated({ permission: Permission.AdminStorageTargetUpdate, admin: true })
+  @Endpoint({
+    summary: 'Restore offloaded assets from a storage target',
+    description:
+      'Queue a transfer that downloads offloaded originals back onto local storage. Assets keep their existing ' +
+      'IDs and metadata; nothing is re-imported as a new asset.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  restoreFromStorageTarget(
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: StorageTransferCreateDto,
+  ): Promise<StorageTransferResponseDto> {
+    return this.service.startRestore(id, dto);
+  }
+
   @Get(':id/transfers')
   @Authenticated({ permission: Permission.AdminStorageTargetRead, admin: true })
   @Endpoint({

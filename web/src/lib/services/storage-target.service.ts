@@ -3,6 +3,8 @@ import {
   deleteStorageTarget,
   exportToStorageTarget,
   importFromStorageTarget,
+  offloadToStorageTarget,
+  restoreFromStorageTarget,
   StorageTargetKind,
   testStorageTarget,
   updateStorageTarget,
@@ -13,10 +15,12 @@ import {
 } from '@immich/sdk';
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import {
+  mdiCloudUploadOutline,
   mdiConnection,
   mdiDownloadOutline,
   mdiPencilOutline,
   mdiPlusBoxOutline,
+  mdiRestore,
   mdiTrashCanOutline,
   mdiUploadOutline,
 } from '@mdi/js';
@@ -63,6 +67,18 @@ export const getStorageTargetActions = ($t: MessageFormatter, target: StorageTar
     onAction: () => modalManager.show(StorageTargetTransferModal, { target, direction: 'import' }),
   };
 
+  const Offload: ActionItem = {
+    icon: mdiCloudUploadOutline,
+    title: $t('admin.storage_target_offload'),
+    onAction: () => modalManager.show(StorageTargetTransferModal, { target, direction: 'offload' }),
+  };
+
+  const Restore: ActionItem = {
+    icon: mdiRestore,
+    title: $t('admin.storage_target_restore'),
+    onAction: () => modalManager.show(StorageTargetTransferModal, { target, direction: 'restore' }),
+  };
+
   const Delete: ActionItem = {
     icon: mdiTrashCanOutline,
     title: $t('delete'),
@@ -70,7 +86,7 @@ export const getStorageTargetActions = ($t: MessageFormatter, target: StorageTar
     onAction: () => handleDeleteStorageTarget(target),
   };
 
-  return { Test, Edit, Export, Import, Delete };
+  return { Test, Edit, Export, Import, Offload, Restore, Delete };
 };
 
 export const handleCreateStorageTarget = async (dto: StorageTargetCreateDto) => {
@@ -143,26 +159,48 @@ const handleTestStorageTarget = async (target: StorageTargetResponseDto) => {
   }
 };
 
+export type TransferDirection = 'export' | 'import' | 'offload' | 'restore';
+
+const TRANSFER_STARTERS = {
+  export: exportToStorageTarget,
+  import: importFromStorageTarget,
+  offload: offloadToStorageTarget,
+  restore: restoreFromStorageTarget,
+} as const;
+
 export const handleStartTransfer = async (
   target: StorageTargetResponseDto,
-  direction: 'export' | 'import',
+  direction: TransferDirection,
   dto: StorageTransferCreateDto,
 ) => {
   const $t = await getFormatter();
 
   try {
-    await (direction === 'export'
-      ? exportToStorageTarget({ id: target.id, storageTransferCreateDto: dto })
-      : importFromStorageTarget({ id: target.id, storageTransferCreateDto: dto }));
+    await TRANSFER_STARTERS[direction]({ id: target.id, storageTransferCreateDto: dto });
 
-    toastManager.info(
-      direction === 'export' ? $t('admin.storage_target_export_started') : $t('admin.storage_target_import_started'),
-    );
+    toastManager.info(transferStartedMessage($t, direction));
     eventManager.emit('StorageTargetUpdate', target);
     return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_start_storage_transfer'));
     return false;
+  }
+};
+
+const transferStartedMessage = ($t: MessageFormatter, direction: TransferDirection) => {
+  switch (direction) {
+    case 'export': {
+      return $t('admin.storage_target_export_started');
+    }
+    case 'import': {
+      return $t('admin.storage_target_import_started');
+    }
+    case 'offload': {
+      return $t('admin.storage_target_offload_started');
+    }
+    case 'restore': {
+      return $t('admin.storage_target_restore_started');
+    }
   }
 };
 

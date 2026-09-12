@@ -350,7 +350,7 @@ export class WorkflowExecutionService extends BaseService {
               };
             },
             write: async (auth, changes) => {
-              const asset = changes.asset;
+              const asset = (changes as any).asset;
               if (!asset) {
                 return;
               }

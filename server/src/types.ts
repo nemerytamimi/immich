@@ -350,6 +350,11 @@ export interface IStorageTransferObjectJob extends IStorageTransferJob {
   size: number;
 }
 
+export interface IStorageTargetObjectDeleteJob {
+  targetId: string;
+  remoteKey: string;
+}
+
 export interface IIntegrityDeleteReportTypeJob {
   type?: IntegrityReport;
 }
@@ -514,6 +519,12 @@ export type JobItem =
   | { name: JobName.StorageTargetExportAsset; data: IStorageTransferAssetJob }
   | { name: JobName.StorageTargetImportScan; data: IStorageTransferJob }
   | { name: JobName.StorageTargetImportObject; data: IStorageTransferObjectJob }
+  | { name: JobName.StorageTargetOffloadQueue; data: IStorageTransferJob }
+  | { name: JobName.StorageTargetOffloadAsset; data: IStorageTransferAssetJob }
+  | { name: JobName.StorageTargetRestoreQueue; data: IStorageTransferJob }
+  | { name: JobName.StorageTargetRestoreAsset; data: IStorageTransferAssetJob }
+  | { name: JobName.StorageTargetObjectDelete; data: IStorageTargetObjectDeleteJob }
+  | { name: JobName.StorageTargetCacheCleanup; data?: IBaseJob }
 
   // Node sync
   | { name: JobName.NodeSyncQueueAll; data?: IBaseJob }

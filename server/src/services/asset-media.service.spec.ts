@@ -306,7 +306,7 @@ describe(AssetMediaService.name, () => {
         size: 42,
       };
 
-      mocks.asset.create.mockResolvedValue(assetEntity);
+      mocks.asset.create.mockResolvedValue({ ...assetEntity, offloadedAt: null });
 
       await expect(
         sut.uploadAsset(
@@ -320,7 +320,7 @@ describe(AssetMediaService.name, () => {
       expect(mocks.asset.remove).not.toHaveBeenCalled();
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: [file.originalPath, undefined] },
+        data: { files: [file.originalPath] },
       });
       expect(mocks.event.emit).not.toHaveBeenCalled();
       expect(mocks.user.updateUsage).not.toHaveBeenCalledWith(authStub.user1.user.id, file.size);
@@ -341,7 +341,7 @@ describe(AssetMediaService.name, () => {
         size: 42,
       };
 
-      mocks.asset.create.mockResolvedValue(assetEntity);
+      mocks.asset.create.mockResolvedValue({ ...assetEntity, offloadedAt: null });
 
       await expect(sut.uploadAsset(authStub.user1, createDto, file)).resolves.toEqual({
         id: 'id_1',
@@ -378,7 +378,7 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['fake_path/asset_1.jpeg', undefined] },
+        data: { files: ['fake_path/asset_1.jpeg'] },
       });
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
@@ -403,7 +403,7 @@ describe(AssetMediaService.name, () => {
 
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.FileDelete,
-        data: { files: ['fake_path/asset_1.jpeg', undefined] },
+        data: { files: ['fake_path/asset_1.jpeg'] },
       });
       expect(mocks.user.updateUsage).not.toHaveBeenCalled();
     });
@@ -739,6 +739,9 @@ describe(AssetMediaService.name, () => {
         .build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForVideo.mockResolvedValue({
+        id: asset.id,
+        ownerId: asset.ownerId,
+        originalFileName: asset.originalFileName,
         originalPath: asset.originalPath,
         encodedVideoPath: asset.files[0].path,
       });
@@ -756,6 +759,9 @@ describe(AssetMediaService.name, () => {
       const asset = AssetFactory.create({ type: AssetType.Video, originalPath: '/original/path.ext' });
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForVideo.mockResolvedValue({
+        id: asset.id,
+        ownerId: asset.ownerId,
+        originalFileName: asset.originalFileName,
         originalPath: asset.originalPath,
         encodedVideoPath: null,
       });

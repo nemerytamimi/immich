@@ -144,6 +144,12 @@ const checkOtherAccess = async (access: AccessRepository, request: OtherAccessRe
       return setUnion(isOwner, isAlbum, isPartner);
     }
 
+    // Offloading destroys the local copy, so it stays owner-only: album and
+    // partner viewers may read an asset but must not move its only bytes.
+    case Permission.AssetOffload: {
+      return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
+    }
+
     case Permission.AssetUpdate: {
       return await access.asset.checkOwnerAccess(auth.user.id, ids, auth.session?.hasElevatedPermission);
     }

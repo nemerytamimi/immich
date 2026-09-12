@@ -5,6 +5,7 @@ import { AssetEditAction } from 'src/dtos/editing.dto';
 import { AssetFileType, AssetMetadataKey, AssetStatus, AssetType, AssetVisibility, JobName, JobStatus } from 'src/enum';
 import { AssetStats } from 'src/repositories/asset.repository';
 import { AssetService } from 'src/services/asset.service';
+import { getRemoteCachePath } from 'src/utils/remote-cache';
 import { AssetFactory } from 'test/factories/asset.factory';
 import { AuthFactory } from 'test/factories/auth.factory';
 import { authStub } from 'test/fixtures/auth.stub';
@@ -549,7 +550,7 @@ describe(AssetService.name, () => {
           {
             name: JobName.FileDelete,
             data: {
-              files: [...asset.files.map(({ path }) => path), asset.originalPath],
+              files: [...asset.files.map(({ path }) => path), asset.originalPath, getRemoteCachePath(asset)],
             },
           },
         ],
@@ -610,7 +611,7 @@ describe(AssetService.name, () => {
 
       expect(mocks.job.queue.mock.calls).toEqual([
         [{ name: JobName.AssetDelete, data: { id: motionAsset.id, deleteOnDisk: true } }],
-        [{ name: JobName.FileDelete, data: { files: [asset.originalPath] } }],
+        [{ name: JobName.FileDelete, data: { files: [asset.originalPath, getRemoteCachePath(asset)] } }],
       ]);
     });
 
@@ -622,7 +623,12 @@ describe(AssetService.name, () => {
       await sut.handleAssetDeletion({ id: asset.id, deleteOnDisk: true });
 
       expect(mocks.job.queue.mock.calls).toEqual([
-        [{ name: JobName.FileDelete, data: { files: [`/data/library/IMG_${asset.id}.jpg`] } }],
+        [
+          {
+            name: JobName.FileDelete,
+            data: { files: [`/data/library/IMG_${asset.id}.jpg`, getRemoteCachePath(asset)] },
+          },
+        ],
       ]);
     });
 

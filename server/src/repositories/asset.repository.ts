@@ -1144,6 +1144,7 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .select('asset.id')
+      .select('asset.ownerId')
       .select('originalFileName')
       .where('asset.id', 'in', ids)
       .$if(isEdited, (qb) =>
@@ -1177,7 +1178,7 @@ export class AssetRepository {
       .leftJoin('asset_file', (join) =>
         join.onRef('asset.id', '=', 'asset_file.assetId').on('asset_file.type', '=', type),
       )
-      .select(['asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
+      .select(['asset.id', 'asset.ownerId', 'asset.originalPath', 'asset.originalFileName', 'asset_file.path as path'])
       .orderBy('asset_file.isEdited', isEdited ? 'desc' : 'asc')
       .executeTakeFirstOrThrow();
   }
@@ -1186,7 +1187,7 @@ export class AssetRepository {
   async getForVideo(id: string) {
     return this.db
       .selectFrom('asset')
-      .select(['asset.originalPath'])
+      .select(['asset.id', 'asset.ownerId', 'asset.originalPath', 'asset.originalFileName'])
       .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo).as('encodedVideoPath'))
       .where('asset.id', '=', id)
       .where('asset.type', '=', AssetType.Video)

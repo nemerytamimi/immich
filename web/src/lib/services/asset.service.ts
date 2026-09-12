@@ -4,15 +4,18 @@ import {
   AssetTypeEnum,
   AssetVisibility,
   getAssetInfo,
+  offloadAssets,
   runAssetJobs,
   updateAsset,
   type AssetJobsDto,
+  type AssetOffloadDto,
   type AssetResponseDto,
 } from '@immich/sdk';
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import {
   mdiAccountCircleOutline,
   mdiAlertOutline,
+  mdiCloudUploadOutline,
   mdiCogRefreshOutline,
   mdiCompare,
   mdiContentCopy,
@@ -32,6 +35,7 @@ import {
   mdiMotionPlayOutline,
   mdiPlus,
   mdiPresentationPlay,
+  mdiRestore,
   mdiShareVariantOutline,
   mdiTagPlusOutline,
   mdiTune,
@@ -45,6 +49,7 @@ import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
+import AssetOffloadModal from '$lib/modals/AssetOffloadModal.svelte';
 import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
 import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
@@ -96,7 +101,55 @@ export const getAssetBulkActions = ($t: MessageFormatter) => {
     $if: () => ownedAssets.every((asset) => asset.isVideo),
   };
 
-  return { AddToAlbum, RefreshFacesJob, RefreshMetadataJob, RegenerateThumbnailJob, TranscodeVideoJob };
+  const Offload: ActionItem = {
+    title: $t('offload'),
+    icon: mdiCloudUploadOutline,
+    onAction: async () => {
+      const confirmed = await modalManager.show(AssetOffloadModal, {
+        assetIds: ownedAssets.map(({ id }) => id),
+      });
+      if (confirmed) {
+        assetMultiSelectManager.clear();
+      }
+    },
+  };
+
+  const Restore: ActionItem = {
+    title: $t('restore'),
+    icon: mdiRestore,
+    onAction: async () => {
+      const confirmed = await modalManager.show(AssetOffloadModal, {
+        assetIds: ownedAssets.map(({ id }) => id),
+        restore: true,
+      });
+      if (confirmed) {
+        assetMultiSelectManager.clear();
+      }
+    },
+  };
+
+  return {
+    AddToAlbum,
+    Offload,
+    Restore,
+    RefreshFacesJob,
+    RefreshMetadataJob,
+    RegenerateThumbnailJob,
+    TranscodeVideoJob,
+  };
+};
+
+export const handleOffloadAssets = async (dto: AssetOffloadDto) => {
+  const $t = await getFormatter();
+
+  try {
+    await offloadAssets({ assetOffloadDto: dto });
+    toastManager.info(dto.restore ? $t('restore_started') : $t('offload_started'));
+    return true;
+  } catch (error) {
+    handleError(error, dto.restore ? $t('errors.unable_to_restore_assets') : $t('errors.unable_to_offload_assets'));
+    return false;
+  }
 };
 
 export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & { stackPrimaryAssetId?: string }) => {

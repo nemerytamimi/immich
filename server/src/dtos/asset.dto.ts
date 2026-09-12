@@ -63,6 +63,17 @@ export const AssetIdsSchema = z
   })
   .meta({ id: 'AssetIdsDto' });
 
+const AssetOffloadSchema = z
+  .object({
+    assetIds: z.array(z.uuidv4()).min(1).describe('Asset IDs'),
+    targetId: z.uuidv4().describe('Storage target the originals are pushed to, or pulled back from'),
+    restore: z
+      .boolean()
+      .default(false)
+      .describe('Pull the originals back onto local storage instead of pushing them out'),
+  })
+  .meta({ id: 'AssetOffloadDto' });
+
 export enum AssetJobName {
   REFRESH_FACES = 'refresh-faces',
   REFRESH_METADATA = 'refresh-metadata',
@@ -192,3 +203,4 @@ export class AssetMetadataResponseDto extends createZodDto(AssetMetadataResponse
 export class AssetMetadataBulkResponseDto extends createZodDto(AssetMetadataBulkResponseSchema) {}
 export class AssetCopyDto extends createZodDto(AssetCopySchema) {}
 export class AssetDownloadOriginalDto extends createZodDto(AssetDownloadOriginalSchema) {}
+export class AssetOffloadDto extends createZodDto(AssetOffloadSchema) {}

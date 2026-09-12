@@ -13,6 +13,7 @@ import {
   AssetMetadataResponseDto,
   AssetMetadataRouteParams,
   AssetMetadataUpsertDto,
+  AssetOffloadDto,
   AssetStatsDto,
   AssetStatsResponseDto,
   UpdateAssetDto,
@@ -20,15 +21,20 @@ import {
 import { AuthDto } from 'src/dtos/auth.dto';
 import { AssetEditsCreateDto, AssetEditsResponseDto } from 'src/dtos/editing.dto';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto';
+import { StorageTransferResponseDto } from 'src/dtos/storage-target.dto';
 import { ApiTag, Permission, RouteKey } from 'src/enum';
 import { Auth, Authenticated } from 'src/middleware/auth.guard';
 import { AssetService } from 'src/services/asset.service';
+import { StorageTargetService } from 'src/services/storage-target.service';
 import { UUIDParamDto } from 'src/validation';
 
 @ApiTags(ApiTag.Assets)
 @Controller(RouteKey.Asset)
 export class AssetController {
-  constructor(private service: AssetService) {}
+  constructor(
+    private service: AssetService,
+    private storageTargetService: StorageTargetService,
+  ) {}
 
   @Get('statistics')
   @Authenticated({ permission: Permission.AssetStatistics })
@@ -39,6 +45,20 @@ export class AssetController {
   })
   getAssetStatistics(@Auth() auth: AuthDto, @Query() dto: AssetStatsDto): Promise<AssetStatsResponseDto> {
     return this.service.getStatistics(auth, dto);
+  }
+
+  @Post('offload')
+  @Authenticated({ permission: Permission.AssetOffload })
+  @Endpoint({
+    summary: 'Offload assets to a storage target',
+    description:
+      'Push the original files for the given assets to a storage target and remove the local copies, or pull them ' +
+      'back with `restore`. The assets stay in the library either way -- thumbnails, metadata, faces and album ' +
+      'membership are untouched, and originals are fetched back from the target on demand.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  offloadAssets(@Auth() auth: AuthDto, @Body() dto: AssetOffloadDto): Promise<StorageTransferResponseDto> {
+    return this.storageTargetService.offloadAssets(auth, dto);
   }
 
   @Post('jobs')

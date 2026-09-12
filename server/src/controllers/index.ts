@@ -34,6 +34,7 @@ import { SessionController } from 'src/controllers/session.controller';
 import { SharedLinkController } from 'src/controllers/shared-link.controller';
 import { StackController } from 'src/controllers/stack.controller';
 import { StorageTargetAdminController } from 'src/controllers/storage-target-admin.controller';
+import { StorageTargetController } from 'src/controllers/storage-target.controller';
 import { SyncNodeAdminController } from 'src/controllers/sync-node-admin.controller';
 import { SyncController } from 'src/controllers/sync.controller';
 import { SystemConfigController } from 'src/controllers/system-config.controller';
@@ -84,6 +85,7 @@ export const controllers = [
   SharedLinkController,
   StackController,
   StorageTargetAdminController,
+  StorageTargetController,
   SyncNodeAdminController,
   SyncController,
   SystemConfigController,

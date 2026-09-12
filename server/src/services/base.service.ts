@@ -68,6 +68,7 @@ import { UserTable } from 'src/schema/tables/user.table';
 import { ClassConstructor } from 'src/types';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access';
 import { getConfig, updateConfig } from 'src/utils/config';
+import { OffloadableAsset, resolveOriginalPath } from 'src/utils/remote-cache';
 
 export const BASE_SERVICE_DEPENDENCIES = [
   LoggingRepository,
@@ -299,6 +300,24 @@ export class BaseService {
 
   requireAccess(request: AccessRequest) {
     return requireAccess(this.accessRepository, request);
+  }
+
+  /**
+   * Local path to an asset's original bytes, fetching them back from its storage
+   * target first if the original has been offloaded. Costs one `access()` call
+   * for assets that are still local, so it is safe on any hot path that needs the
+   * original file.
+   */
+  protected resolveOriginalPath(asset: OffloadableAsset) {
+    return resolveOriginalPath(
+      {
+        logger: this.logger,
+        storageRepository: this.storageRepository,
+        storageTargetRepository: this.storageTargetRepository,
+        remoteStorageRepository: this.remoteStorageRepository,
+      },
+      asset,
+    );
   }
 
   checkAccess(request: AccessRequest) {
