@@ -115,6 +115,65 @@ describe(StorageTargetService.name, () => {
       expect(mocks.storageTarget.create).not.toHaveBeenCalled();
     });
 
+    it('should reject an endpoint that already contains the bucket', async () => {
+      // Copied straight out of a provider's console. With path-style addressing
+      // this addresses the bucket twice and the service answers NoSuchKey, so it
+      // is refused at configuration time instead.
+      await expect(
+        sut.create({
+          name: 'Contabo',
+          kind: StorageTargetKind.S3,
+          config: { ...s3ConfigDto, endpoint: 'https://eu2.contabostorage.com/immich', bucket: 'immich' },
+          secret: { accessKeyId: 'key', secretAccessKey: 'secret' },
+          isEnabled: true,
+        }),
+      ).rejects.toThrow(/must not include the bucket/);
+
+      expect(mocks.storageTarget.create).not.toHaveBeenCalled();
+    });
+
+    it('should accept the same endpoint without the bucket in its path', async () => {
+      mocks.storageTarget.getByName.mockResolvedValue(void 0);
+      mocks.storageTarget.create.mockResolvedValue(targetStub);
+
+      await sut.create({
+        name: 'Contabo',
+        kind: StorageTargetKind.S3,
+        config: { ...s3ConfigDto, endpoint: 'https://eu2.contabostorage.com', bucket: 'immich' },
+        secret: { accessKeyId: 'key', secretAccessKey: 'secret' },
+        isEnabled: true,
+      });
+
+      expect(mocks.storageTarget.create).toHaveBeenCalled();
+    });
+
+    it('should leave a path that is not the bucket alone, for S3 behind a proxy', async () => {
+      mocks.storageTarget.getByName.mockResolvedValue(void 0);
+      mocks.storageTarget.create.mockResolvedValue(targetStub);
+
+      await sut.create({
+        name: 'Proxied',
+        kind: StorageTargetKind.S3,
+        config: { ...s3ConfigDto, endpoint: 'https://gateway.example.com/s3', bucket: 'immich' },
+        secret: { accessKeyId: 'key', secretAccessKey: 'secret' },
+        isEnabled: true,
+      });
+
+      expect(mocks.storageTarget.create).toHaveBeenCalled();
+    });
+
+    it('should reject an endpoint that is not a URL', async () => {
+      await expect(
+        sut.create({
+          name: 'Broken',
+          kind: StorageTargetKind.S3,
+          config: { ...s3ConfigDto, endpoint: 'eu2.contabostorage.com' },
+          secret: { accessKeyId: 'key', secretAccessKey: 'secret' },
+          isEnabled: true,
+        }),
+      ).rejects.toThrow(/must be a full URL/);
+    });
+
     it('should not require credentials for a local target', async () => {
       const localConfig = { ...s3ConfigDto, basePath: '/mnt/backup', prefix: '' };
       mocks.storageTarget.getByName.mockResolvedValue(void 0);

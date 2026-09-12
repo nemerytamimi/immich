@@ -249,6 +249,7 @@ function asConfig(kind: StorageTargetKind, config: StorageTargetConfigDto): Stor
       if (!config.bucket) {
         throw new BadRequestException('An S3 target requires a bucket');
       }
+      assertEndpointHasNoBucket(config.endpoint, config.bucket);
       return {
         kind,
         endpoint: config.endpoint,
@@ -273,6 +274,40 @@ function asConfig(kind: StorageTargetKind, config: StorageTargetConfigDto): Stor
     default: {
       throw new BadRequestException(`Unsupported storage target kind: ${kind}`);
     }
+  }
+}
+
+/**
+ * Reject an endpoint that already contains the bucket in its path.
+ *
+ * Copying the browsable bucket URL out of a provider's console is the obvious
+ * thing to do, and with path-style addressing it silently doubles up: the SDK
+ * appends the bucket to whatever path the endpoint carries, so
+ * `https://eu2.contabostorage.com/immich` plus bucket `immich` requests
+ * `/immich/immich`. Ceph reads that second segment as an object key and answers
+ * `NoSuchKey`, which looks like missing data rather than a wrong endpoint.
+ *
+ * Only the bucket-in-path case is refused. A path that is not the bucket is
+ * left alone, since S3 behind a reverse proxy is legitimately mounted that way.
+ */
+function assertEndpointHasNoBucket(endpoint: string | undefined, bucket: string) {
+  if (!endpoint) {
+    return;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new BadRequestException(`The endpoint must be a full URL, for example https://s3.example.com`);
+  }
+
+  const segments = url.pathname.split('/').filter(Boolean);
+  if (segments.includes(bucket)) {
+    throw new BadRequestException(
+      `The endpoint must not include the bucket: use ${url.protocol}//${url.host} and leave "${bucket}" in the bucket field. ` +
+        `Including it makes every request address "${bucket}" twice, which the service reports as a missing object.`,
+    );
   }
 }
 
