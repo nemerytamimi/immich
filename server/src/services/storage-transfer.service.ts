@@ -36,6 +36,22 @@ const REMOTE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** How often a queueing walk re-reads its transfer to notice a pause or cancel. */
 const QUEUE_STOP_CHECK_INTERVAL = 500;
 
+/**
+ * Every remote key prefix a user's objects can sit under.
+ *
+ * An exported original keeps its library-relative path, whose first segment is
+ * the user's storage label, or their id when they have none. Assets that never
+ * went through the storage template fall back to an id-prefixed key instead, so
+ * a user who has a storage label can own objects under both. Missing the second
+ * one would silently skip exactly those assets on the way back in.
+ *
+ * Kept next to `getRemoteKey`, which is what decides those two shapes: if one
+ * changes, so must the other.
+ */
+const getOwnerPrefixes = (user: { id: string; storageLabel: string | null }): string[] => [
+  ...new Set([user.storageLabel || user.id, user.id]),
+];
+
 @Injectable()
 export class StorageTransferService extends BaseService {
   @OnJob({ name: JobName.StorageTargetExportQueue, queue: QueueName.StorageTarget })
@@ -154,10 +170,21 @@ export class StorageTransferService extends BaseService {
       startedAt: new Date(),
     });
 
+    // Objects on a target are laid out per user, so a scan that walked the whole
+    // target would hand one user every other user's originals. Scanning only the
+    // owner's own prefixes is what keeps an import as user-scoped as an export.
+    const owner = await this.userRepository.get(transfer.ownerId, {});
+    if (!owner) {
+      this.logger.warn(`Owner ${transfer.ownerId} no longer exists, skipping import`);
+      return JobStatus.Skipped;
+    }
+
+    const prefixes = transfer.prefix === null ? getOwnerPrefixes(owner) : [transfer.prefix];
+
     let total = 0;
 
     try {
-      for await (const batch of this.remoteStorageRepository.list(target)) {
+      for await (const batch of this.listPrefixes(target, prefixes)) {
         const candidates = batch.filter(({ key }) => mimeTypes.isAsset(key));
 
         // The ledger holds every object this instance has put on the target as
@@ -655,6 +682,13 @@ export class StorageTransferService extends BaseService {
       size,
       checksum: asset.checksum,
     });
+  }
+
+  /** Walk several prefixes as one stream, so the scan body stays prefix-agnostic. */
+  private async *listPrefixes(target: StorageTargetRef, prefixes: string[]) {
+    for (const prefix of prefixes) {
+      yield* this.remoteStorageRepository.list(target, prefix || undefined);
+    }
   }
 
   /**

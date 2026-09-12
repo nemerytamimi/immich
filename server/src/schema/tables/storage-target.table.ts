@@ -70,6 +70,18 @@ export class StorageTargetTransferTable {
   @Column({ type: 'jsonb' })
   scope!: StorageTransferScope;
 
+  /**
+   * Where an import scans, when the default is not what is wanted.
+   *
+   * Null -- the default -- scans only the owner's own key prefixes, which is what
+   * stops an import handing one user another user's originals. An empty string
+   * deliberately scans the whole target, for a bucket that was not written by
+   * Immich and so has no per-user layout to respect. Unused by the other
+   * directions, which work from local assets rather than remote keys.
+   */
+  @Column({ type: 'character varying', nullable: true, default: null })
+  prefix!: string | null;
+
   @Column({ type: 'integer', default: 0 })
   totalCount!: Generated<number>;
 
