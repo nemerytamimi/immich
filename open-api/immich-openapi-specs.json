@@ -31537,6 +31537,10 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "prefix": {
+            "description": "Import only. Where to scan, when the default is not wanted. Omit to scan just this user's own key prefixes, which is what stops an import pulling in another user's files. Pass an empty string to scan the whole target, for a bucket that was not written by Immich.",
+            "type": "string"
+          },
           "scope": {
             "$ref": "#/components/schemas/StorageTransferScopeDto",
             "default": {
@@ -31604,6 +31608,11 @@
             "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
             "type": "string"
           },
+          "prefix": {
+            "description": "Where an import scanned, or null for the owner's own prefixes",
+            "nullable": true,
+            "type": "string"
+          },
           "startedAt": {
             "description": "Start date",
             "format": "date-time",
@@ -31635,6 +31644,7 @@
           "finishedAt",
           "id",
           "ownerId",
+          "prefix",
           "startedAt",
           "status",
           "targetId",

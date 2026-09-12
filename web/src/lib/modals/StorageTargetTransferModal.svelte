@@ -5,7 +5,7 @@
     type StorageTargetResponseDto,
     type UserAdminResponseDto,
   } from '@immich/sdk';
-  import { Field, FormModal, Select, Text } from '@immich/ui';
+  import { Field, FormModal, Select, Switch, Text } from '@immich/ui';
   import { mdiCloudUploadOutline, mdiDownloadOutline, mdiRestore, mdiUploadOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -73,6 +73,9 @@
     }
   });
 
+  // Only an import reads remote keys, so only an import has a scan location.
+  let scanWholeTarget = $state(false);
+
   const onSubmit = async () => {
     if (!ownerId) {
       return;
@@ -81,6 +84,9 @@
     const success = await handleStartTransfer(target, direction, {
       ownerId,
       scope: { type: StorageTransferScopeType.All },
+      // Omitted means "this user's own prefixes"; an empty string is the
+      // deliberate opt-out that scans everything.
+      prefix: direction === 'import' && scanWholeTarget ? '' : undefined,
     });
     if (success) {
       onClose();
@@ -95,5 +101,14 @@
     <Field label={$t('user')} required>
       <Select bind:value={ownerId} options={userOptions} />
     </Field>
+
+    {#if direction === 'import'}
+      <Field
+        label={$t('admin.storage_target_import_whole_target')}
+        description={$t('admin.storage_target_import_whole_target_description')}
+      >
+        <Switch bind:checked={scanWholeTarget} />
+      </Field>
+    {/if}
   </div>
 </FormModal>

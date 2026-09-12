@@ -388,6 +388,8 @@
     "storage_target_import": "Import from target",
     "storage_target_import_description": "Scan {name} for supported files and import them as new assets for this user. Duplicates are skipped.",
     "storage_target_import_started": "Import started",
+    "storage_target_import_whole_target": "Scan the whole target",
+    "storage_target_import_whole_target_description": "By default only this user's own files are scanned, so an import cannot pull in another user's photos. Turn this on for a bucket that was not written by Immich and has no per-user layout.",
     "storage_target_kind": "Type",
     "storage_target_kind_local": "Mounted filesystem",
     "storage_target_kind_s3": "S3-compatible",

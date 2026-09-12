@@ -282,6 +282,9 @@ export class StorageTargetService extends BaseService {
       direction,
       status: StorageTransferStatus.Pending,
       scope: asScope(dto.scope),
+      // Only an import reads remote keys, so the scan root is meaningless for the
+      // others and is not carried on them.
+      prefix: direction === StorageTransferDirection.Import ? (dto.prefix ?? null) : null,
     });
 
     await this.jobRepository.queue({ name: QUEUE_JOB_BY_DIRECTION[direction], data: { transferId: transfer.id } });

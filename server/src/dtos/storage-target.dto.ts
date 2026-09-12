@@ -107,6 +107,14 @@ const StorageTransferCreateSchema = z
   .object({
     ownerId: z.uuidv4().describe('User whose assets are exported, or who will own the imported assets'),
     scope: StorageTransferScopeSchema.default({ type: StorageTransferScopeType.All }),
+    prefix: z
+      .string()
+      .optional()
+      .describe(
+        "Import only. Where to scan, when the default is not wanted. Omit to scan just this user's own key " +
+          "prefixes, which is what stops an import pulling in another user's files. Pass an empty string to scan " +
+          'the whole target, for a bucket that was not written by Immich.',
+      ),
   })
   .meta({ id: 'StorageTransferCreateDto' });
 
@@ -123,6 +131,7 @@ const StorageTransferResponseSchema = z
     startedAt: z.string().meta({ format: 'date-time' }).nullable().describe('Start date'),
     finishedAt: z.string().meta({ format: 'date-time' }).nullable().describe('Completion date'),
     error: z.string().nullable().describe('Failure reason, if the transfer failed as a whole'),
+    prefix: z.string().nullable().describe("Where an import scanned, or null for the owner's own prefixes"),
     createdAt: z.string().meta({ format: 'date-time' }).describe('Creation date'),
   })
   .meta({ id: 'StorageTransferResponseDto' });
@@ -201,6 +210,7 @@ export function mapStorageTransfer(entity: Selectable<StorageTargetTransferTable
     startedAt: entity.startedAt ? asDateTimeString(entity.startedAt) : null,
     finishedAt: entity.finishedAt ? asDateTimeString(entity.finishedAt) : null,
     error: entity.error,
+    prefix: entity.prefix,
     createdAt: asDateTimeString(entity.createdAt),
   };
 }

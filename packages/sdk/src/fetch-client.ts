@@ -621,6 +621,8 @@ export type StorageTransferResponseDto = {
     id: string;
     /** Owning user ID */
     ownerId: string;
+    /** Where an import scanned, or null for the owner's own prefixes */
+    prefix: string | null;
     /** Start date */
     startedAt: string | null;
     status: StorageTransferStatus;
@@ -647,6 +649,8 @@ export type StorageTransferScopeDto = {
 export type StorageTransferCreateDto = {
     /** User whose assets are exported, or who will own the imported assets */
     ownerId: string;
+    /** Import only. Where to scan, when the default is not wanted. Omit to scan just this user's own key prefixes, which is what stops an import pulling in another user's files. Pass an empty string to scan the whole target, for a bucket that was not written by Immich. */
+    prefix?: string;
     scope?: StorageTransferScopeDto;
 };
 export type StorageTargetTestResponseDto = {

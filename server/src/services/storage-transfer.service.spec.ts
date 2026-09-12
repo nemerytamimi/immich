@@ -42,6 +42,7 @@ const transferStub = {
   startedAt: new Date('2026-01-01'),
   finishedAt: null,
   error: null,
+  prefix: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
   updateId: 'update-1',
@@ -146,6 +147,7 @@ describe(StorageTransferService.name, () => {
     mocks.storageTarget.incrementTransferProgress.mockResolvedValue(transferStub);
     mocks.storageTarget.upsertObject.mockResolvedValue(objectStub);
     mocks.storage.unlink.mockResolvedValue(void 0);
+    mocks.user.get.mockResolvedValue({ id: 'user-1', storageLabel: null } as never);
   });
 
   it('should work', () => {
@@ -438,6 +440,67 @@ describe(StorageTransferService.name, () => {
   });
 
   describe('handleImportScan', () => {
+    it('should scan only the owner, not the whole target', async () => {
+      // Objects are laid out per user, so scanning the target root would hand
+      // this user every other user's originals.
+      mocks.remoteStorage.list.mockReturnValue(asAsyncBatches([]) as never);
+
+      await sut.handleImportScan({ transferId: 'transfer-1' });
+
+      expect(mocks.remoteStorage.list).toHaveBeenCalledTimes(1);
+      expect(mocks.remoteStorage.list).toHaveBeenCalledWith(targetStub, 'user-1');
+    });
+
+    it('should also scan the id prefix when the owner has a storage label', async () => {
+      // A labelled user's exports are keyed by label, but anything that never
+      // went through the storage template is keyed by id. Both or neither.
+      mocks.user.get.mockResolvedValue({ id: 'user-1', storageLabel: 'alice' } as never);
+      mocks.remoteStorage.list.mockReturnValue(asAsyncBatches([]) as never);
+
+      await sut.handleImportScan({ transferId: 'transfer-1' });
+
+      expect(mocks.remoteStorage.list).toHaveBeenCalledTimes(2);
+      expect(mocks.remoteStorage.list).toHaveBeenCalledWith(targetStub, 'alice');
+      expect(mocks.remoteStorage.list).toHaveBeenCalledWith(targetStub, 'user-1');
+    });
+
+    it('should not scan the same prefix twice when the label equals the id', async () => {
+      mocks.user.get.mockResolvedValue({ id: 'user-1', storageLabel: 'user-1' } as never);
+      mocks.remoteStorage.list.mockReturnValue(asAsyncBatches([]) as never);
+
+      await sut.handleImportScan({ transferId: 'transfer-1' });
+
+      expect(mocks.remoteStorage.list).toHaveBeenCalledTimes(1);
+    });
+
+    it('should scan the whole target when an empty prefix was asked for', async () => {
+      // The deliberate opt-out, for a bucket Immich did not write and which has
+      // no per-user layout to respect.
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, prefix: '' });
+      mocks.remoteStorage.list.mockReturnValue(asAsyncBatches([]) as never);
+
+      await sut.handleImportScan({ transferId: 'transfer-1' });
+
+      expect(mocks.remoteStorage.list).toHaveBeenCalledWith(targetStub, void 0);
+    });
+
+    it('should scan an explicit prefix when one was given', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, prefix: 'shared/trip' });
+      mocks.remoteStorage.list.mockReturnValue(asAsyncBatches([]) as never);
+
+      await sut.handleImportScan({ transferId: 'transfer-1' });
+
+      expect(mocks.remoteStorage.list).toHaveBeenCalledWith(targetStub, 'shared/trip');
+    });
+
+    it('should not scan at all once the owner is gone', async () => {
+      mocks.user.get.mockResolvedValue(void 0);
+
+      await expect(sut.handleImportScan({ transferId: 'transfer-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.remoteStorage.list).not.toHaveBeenCalled();
+    });
+
     it('should only queue supported, not-yet-known files', async () => {
       mocks.remoteStorage.list.mockReturnValue(
         asAsyncBatches([
