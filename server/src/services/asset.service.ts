@@ -46,6 +46,7 @@ import {
 import { updateLockedColumns } from 'src/utils/database';
 import { extractTimeZone } from 'src/utils/date';
 import { batched, findOrFail } from 'src/utils/misc';
+import { getRemoteCachePath } from 'src/utils/remote-cache';
 import { transformOcrBoundingBox } from 'src/utils/transform';
 
 @Injectable()
@@ -319,6 +320,10 @@ export class AssetService extends BaseService {
       }
     }
 
+    // The ledger row cascades away with the asset, so the remote copy has to be
+    // claimed before the row goes, or the object is orphaned on the target.
+    const offloadLocation = await this.storageTargetRepository.getOffloadLocation(id);
+
     await this.assetRepository.remove(asset);
     if (!asset.libraryId) {
       await this.userRepository.updateUsage(asset.ownerId, -(asset.exifInfo?.fileSizeInByte || 0));
@@ -349,10 +354,19 @@ export class AssetService extends BaseService {
     ];
 
     if (deleteOnDisk && !asset.isOffline) {
-      files.push(assetFiles.sidecarFile?.path, asset.originalPath);
+      // An offloaded asset has no local original, but it may well have a cached
+      // copy of one.
+      files.push(assetFiles.sidecarFile?.path, asset.originalPath, getRemoteCachePath(asset));
     }
 
     await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: files.filter(Boolean) } });
+
+    if (deleteOnDisk && offloadLocation) {
+      await this.jobRepository.queue({
+        name: JobName.StorageTargetObjectDelete,
+        data: { targetId: offloadLocation.id, remoteKey: offloadLocation.remoteKey },
+      });
+    }
 
     return JobStatus.Success;
   }

@@ -383,6 +383,9 @@
               {/if}
               <DeleteAssets menuItem {onAssetDelete} onUndoDelete={onSearchQueryUpdate} />
               <hr />
+              <ActionMenuItem action={Actions.Offload} />
+              <ActionMenuItem action={Actions.Restore} />
+              <hr />
               <ActionMenuItem action={Actions.RegenerateThumbnailJob} />
               <ActionMenuItem action={Actions.RefreshMetadataJob} />
               <ActionMenuItem action={Actions.TranscodeVideoJob} />

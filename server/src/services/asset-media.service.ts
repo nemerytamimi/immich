@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { dirname } from 'node:path';
 import sanitize from 'sanitize-filename';
 import { StorageCore } from 'src/cores/storage.core';
 import { Asset, AuthSharedLink } from 'src/database';
@@ -35,6 +36,7 @@ import { asUploadRequest, onBeforeLink } from 'src/utils/asset.util';
 import { isAssetChecksumConstraint } from 'src/utils/database';
 import { getFilenameExtension, getFileNameWithoutExtension, ImmichFileResponse } from 'src/utils/file';
 import { mimeTypes } from 'src/utils/mime-types';
+import { getRemoteCachePath } from 'src/utils/remote-cache';
 import { fromChecksum } from 'src/utils/request';
 
 export interface AssetMediaRedirectResponse {
@@ -194,19 +196,22 @@ export class AssetMediaService extends BaseService {
 
       return { id: asset.id, status: AssetMediaStatus.CREATED };
     } catch (error: any) {
-      // clean up files
-      await this.jobRepository.queue({
-        name: JobName.FileDelete,
-        data: { files: [file.originalPath, sidecarFile?.originalPath] },
-      });
-
       // handle duplicates with a success response
       if (isAssetChecksumConstraint(error)) {
         const duplicateId = await this.assetRepository.getUploadAssetIdByChecksum(auth.user.id, file.checksum);
         if (!duplicateId) {
+          await this.discardUpload(file, sidecarFile);
           this.logger.error(`Error locating duplicate for checksum constraint`);
           throw new InternalServerErrorException();
         }
+
+        // Re-uploading an asset whose original was offloaded is the cheapest way
+        // to bring it back: the bytes are already on disk and the constraint that
+        // landed us here has just proven the checksum matches, so they are moved
+        // into place on the existing row rather than thrown away. The asset keeps
+        // its metadata, faces and album membership, and no duplicate is created.
+        const adopted = await this.adoptUploadAsRestore(duplicateId, file);
+        await this.discardUpload(adopted ? undefined : file, sidecarFile);
 
         if (auth.sharedLink) {
           await this.addToSharedLink(auth.sharedLink, duplicateId);
@@ -215,6 +220,8 @@ export class AssetMediaService extends BaseService {
         this.logger.debug(`Duplicate asset upload rejected: existing asset ${duplicateId}`);
         return { status: AssetMediaStatus.DUPLICATE, id: duplicateId };
       }
+
+      await this.discardUpload(file, sidecarFile);
 
       // clean up the asset row if one was created
       if (asset) {
@@ -226,6 +233,50 @@ export class AssetMediaService extends BaseService {
     }
   }
 
+  private discardUpload(file: UploadFile | undefined, sidecarFile: UploadFile | undefined) {
+    const files = [file?.originalPath, sidecarFile?.originalPath].filter(Boolean);
+    if (files.length === 0) {
+      return Promise.resolve();
+    }
+
+    return this.jobRepository.queue({ name: JobName.FileDelete, data: { files } });
+  }
+
+  /**
+   * Move a rejected duplicate upload into place as the original of an offloaded
+   * asset, bringing it back onto local disk. Returns false -- leaving the upload
+   * to be cleaned up as usual -- when the asset is not offloaded, or when the
+   * file cannot be moved, since a failed restore must never lose the remote copy.
+   */
+  private async adoptUploadAsRestore(assetId: string, file: UploadFile): Promise<boolean> {
+    const asset = await this.storageTargetRepository.getAssetForExport(assetId);
+    if (!asset?.offloadedAt) {
+      return false;
+    }
+
+    try {
+      this.storageRepository.mkdirSync(dirname(asset.originalPath));
+
+      try {
+        await this.storageRepository.rename(file.originalPath, asset.originalPath);
+      } catch {
+        // The upload folder and the library folder can be separate mounts, where
+        // rename fails with EXDEV.
+        await this.storageRepository.copyFile(file.originalPath, asset.originalPath);
+        await this.storageRepository.unlink(file.originalPath);
+      }
+
+      await this.storageTargetRepository.setOffloadedAt(assetId, null);
+      await this.storageRepository.unlink(getRemoteCachePath(asset)).catch(() => {});
+
+      this.logger.log(`Restored offloaded asset ${assetId} from a re-upload of the same file`);
+      return true;
+    } catch (error: any) {
+      this.logger.warn(`Could not restore offloaded asset ${assetId} from upload: ${error}`);
+      return false;
+    }
+  }
+
   async downloadOriginal(auth: AuthDto, id: string, dto: AssetDownloadOriginalDto): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
 
@@ -233,12 +284,12 @@ export class AssetMediaService extends BaseService {
       dto.edited = true;
     }
 
-    const { originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
-      id,
-      dto.edited ?? false,
-    );
+    const asset = await this.assetRepository.getForOriginal(id, dto.edited ?? false);
+    const { originalFileName, editedPath } = asset;
 
-    const path = editedPath ?? originalPath!;
+    // An edit is always rendered locally, so only the untouched original can be
+    // sitting on a storage target.
+    const path = editedPath ?? (await this.resolveOriginalPath(asset));
 
     return new ImmichFileResponse({
       path,
@@ -306,7 +357,9 @@ export class AssetMediaService extends BaseService {
       throw new NotFoundException('Asset not found or asset is not a video');
     }
 
-    const filepath = asset.encodedVideoPath || asset.originalPath;
+    // A transcoded copy lives locally, so the target is only consulted when the
+    // original itself has to be played back.
+    const filepath = asset.encodedVideoPath || (await this.resolveOriginalPath(asset));
 
     return new ImmichFileResponse({
       path: filepath,

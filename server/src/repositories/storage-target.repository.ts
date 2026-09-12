@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { Insertable, Kysely, Updateable } from 'kysely';
+import { Insertable, Kysely, SelectQueryBuilder, Updateable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
 import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetVisibility, StorageTransferScopeType, StorageTransferStatus } from 'src/enum';
+import { AssetFileType, AssetVisibility, StorageTransferScopeType, StorageTransferStatus } from 'src/enum';
 import { DB } from 'src/schema';
 import {
   StorageTargetObjectTable,
@@ -130,19 +130,70 @@ export class StorageTargetRepository {
       .where('asset.visibility', '!=', AssetVisibility.Hidden);
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, { type: StorageTransferScopeType.All }], stream: true })
-  streamAssetsForExport(ownerId: string, scope: StorageTransferScope) {
-    let query = this.exportableAssetQuery(ownerId);
-
+  /** Narrow an asset query to the transfer's scope. Shared by every direction. */
+  private scoped<T extends SelectQueryBuilder<DB, 'asset', { id: string }>>(query: T, scope: StorageTransferScope): T {
     if (scope.type === StorageTransferScopeType.Assets) {
-      query = query.where('asset.id', 'in', scope.assetIds);
-    } else if (scope.type === StorageTransferScopeType.Albums) {
-      query = query.where('asset.id', 'in', (eb) =>
-        eb.selectFrom('album_asset').select('album_asset.assetId').where('album_asset.albumId', 'in', scope.albumIds),
-      );
+      return query.where('asset.id', 'in', scope.assetIds) as T;
     }
 
-    return query.stream();
+    if (scope.type === StorageTransferScopeType.Albums) {
+      return query.where('asset.id', 'in', (eb) =>
+        eb.selectFrom('album_asset').select('album_asset.assetId').where('album_asset.albumId', 'in', scope.albumIds),
+      ) as T;
+    }
+
+    return query;
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, { type: StorageTransferScopeType.All }], stream: true })
+  streamAssetsForExport(ownerId: string, scope: StorageTransferScope) {
+    return this.scoped(this.exportableAssetQuery(ownerId), scope).stream();
+  }
+
+  /**
+   * Assets eligible to have their local original dropped. On top of the export
+   * rules, an asset must already be offloadable *without* the original: its
+   * thumbnail and preview have to exist locally, otherwise offloading would leave
+   * a blank tile in the timeline, which is exactly what this feature promises not
+   * to do. Assets already offloaded are skipped so re-running is cheap.
+   */
+  @GenerateSql({ params: [DummyValue.UUID, { type: StorageTransferScopeType.All }], stream: true })
+  streamAssetsForOffload(ownerId: string, scope: StorageTransferScope) {
+    return this.scoped(this.exportableAssetQuery(ownerId), scope)
+      .where('asset.offloadedAt', 'is', null)
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset_file')
+            .select('asset_file.id')
+            .whereRef('asset_file.assetId', '=', 'asset.id')
+            .where('asset_file.type', '=', AssetFileType.Thumbnail),
+        ),
+      )
+      .where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom('asset_file')
+            .select('asset_file.id')
+            .whereRef('asset_file.assetId', '=', 'asset.id')
+            .where('asset_file.type', '=', AssetFileType.Preview),
+        ),
+      )
+      .stream();
+  }
+
+  /** The inverse of {@link streamAssetsForOffload}: assets whose bytes are remote-only. */
+  @GenerateSql({ params: [DummyValue.UUID, { type: StorageTransferScopeType.All }], stream: true })
+  streamAssetsForRestore(ownerId: string, scope: StorageTransferScope) {
+    return this.scoped(
+      this.db
+        .selectFrom('asset')
+        .select(['asset.id'])
+        .where('asset.ownerId', '=', ownerId)
+        .where('asset.deletedAt', 'is', null)
+        .where('asset.offloadedAt', 'is not', null),
+      scope,
+    ).stream();
   }
 
   @GenerateSql({ params: [DummyValue.UUID] })
@@ -157,10 +208,71 @@ export class StorageTargetRepository {
         'asset.originalFileName',
         'asset.checksum',
         'asset.type',
+        'asset.offloadedAt',
         'asset_exif.fileSizeInByte',
       ])
       .where('asset.id', '=', id)
       .executeTakeFirst();
+  }
+
+  // -- offload --
+
+  /**
+   * Where an offloaded asset's bytes actually live. Disabled targets are excluded
+   * so an admin can take a target offline without the serve path hammering it;
+   * the asset then reads as unavailable rather than hanging.
+   *
+   * An asset can sit on more than one target (exported to a backup, then
+   * offloaded to another). The most recently synced enabled target wins, which
+   * keeps the choice deterministic.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getOffloadLocation(assetId: string) {
+    return this.db
+      .selectFrom('storage_target_object')
+      .innerJoin('storage_target', 'storage_target.id', 'storage_target_object.targetId')
+      .select([
+        'storage_target.id',
+        'storage_target.updatedAt',
+        'storage_target.config',
+        'storage_target.secret',
+        'storage_target.name',
+        'storage_target_object.remoteKey',
+        'storage_target_object.size',
+      ])
+      .where('storage_target_object.assetId', '=', assetId)
+      .where('storage_target.isEnabled', '=', true)
+      .orderBy('storage_target_object.syncedAt desc')
+      .executeTakeFirst();
+  }
+
+  async setOffloadedAt(assetId: string, offloadedAt: Date | null) {
+    await this.db.updateTable('asset').set({ offloadedAt }).where('id', '=', assetId).execute();
+  }
+
+  /**
+   * Guards target deletion: the ledger cascades away with the target, so deleting
+   * one that still holds the only copy of an original would strand those assets.
+   */
+  @GenerateSql({ params: [DummyValue.UUID] })
+  async countOffloadedAssets(targetId: string): Promise<number> {
+    const { count } = await this.db
+      .selectFrom('storage_target_object')
+      .innerJoin('asset', 'asset.id', 'storage_target_object.assetId')
+      .select((eb) => eb.fn.countAll<string>().as('count'))
+      .where('storage_target_object.targetId', '=', targetId)
+      .where('asset.offloadedAt', 'is not', null)
+      .executeTakeFirstOrThrow();
+
+    return Number(count);
+  }
+
+  async deleteObject(targetId: string, remoteKey: string) {
+    await this.db
+      .deleteFrom('storage_target_object')
+      .where('targetId', '=', targetId)
+      .where('remoteKey', '=', remoteKey)
+      .execute();
   }
 
   // -- object ledger --

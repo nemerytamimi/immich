@@ -1,6 +1,7 @@
 import { AssetController } from 'src/controllers/asset.controller';
 import { AssetMetadataKey } from 'src/enum';
 import { AssetService } from 'src/services/asset.service';
+import { StorageTargetService } from 'src/services/storage-target.service';
 import request from 'supertest';
 import { factory } from 'test/small.factory';
 import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils';
@@ -8,15 +9,20 @@ import { ControllerContext, controllerSetup, mockBaseService } from 'test/utils'
 describe(AssetController.name, () => {
   let ctx: ControllerContext;
   const service = mockBaseService(AssetService);
+  const storageTargetService = mockBaseService(StorageTargetService);
 
   beforeAll(async () => {
-    ctx = await controllerSetup(AssetController, [{ provide: AssetService, useValue: service }]);
+    ctx = await controllerSetup(AssetController, [
+      { provide: AssetService, useValue: service },
+      { provide: StorageTargetService, useValue: storageTargetService },
+    ]);
     return () => ctx.close();
   });
 
   beforeEach(() => {
     ctx.reset();
     service.resetAllMocks();
+    storageTargetService.resetAllMocks();
   });
 
   describe('PUT /assets', () => {

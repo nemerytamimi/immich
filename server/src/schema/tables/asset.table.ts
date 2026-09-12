@@ -60,6 +60,11 @@ import { ASSET_CHECKSUM_CONSTRAINT } from 'src/utils/database';
   columns: ['id'],
   where: `visibility = 'timeline' AND "deletedAt" IS NULL`,
 })
+@Index({
+  name: 'asset_offloadedAt_idx',
+  columns: ['offloadedAt'],
+  where: `"offloadedAt" IS NOT NULL`,
+})
 // For all assets, each originalpath must be unique per user and library
 export class AssetTable {
   @PrimaryGeneratedColumn()
@@ -109,6 +114,16 @@ export class AssetTable {
 
   @Column({ type: 'boolean', default: false })
   isOffline!: Generated<boolean>;
+
+  /**
+   * Set once the original has been pushed to a storage target and the local copy
+   * deleted. The asset stays in the library -- thumbnails are still local -- and
+   * the original is fetched back through the remote cache on demand. The target
+   * and key are looked up in `storage_target_object`, which is also why a target
+   * holding offloaded originals cannot be deleted.
+   */
+  @Column({ type: 'timestamp with time zone', nullable: true, default: null })
+  offloadedAt!: Timestamp | null;
 
   @ForeignKeyColumn(() => LibraryTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', nullable: true })
   libraryId!: string | null;

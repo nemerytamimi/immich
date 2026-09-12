@@ -229,14 +229,18 @@ export class MetadataService extends BaseService {
 
   @OnJob({ name: JobName.AssetExtractMetadata, queue: QueueName.MetadataExtraction })
   async handleMetadataExtraction(data: JobOf<JobName.AssetExtractMetadata>) {
-    const [{ metadata, reverseGeocoding }, asset] = await Promise.all([
+    const [{ metadata, reverseGeocoding }, found] = await Promise.all([
       this.getConfig({ withCache: true }),
       this.assetJobRepository.getForMetadataExtraction(data.id),
     ]);
 
-    if (!asset) {
+    if (!found) {
       return;
     }
+
+    // Every tag read below goes through the original file, so an offloaded asset
+    // is pulled back through the remote cache before anything else runs.
+    const asset = { ...found, originalPath: await this.resolveOriginalPath(found) };
 
     const [exifResult, stats] = await Promise.all([
       this.getExifTags(asset),

@@ -42,8 +42,8 @@
   const { Create } = $derived(getStorageTargetsActions($t));
 
   const getActionsForTarget = (target: StorageTargetResponseDto) => {
-    const { Test, Export, Import, Edit, Delete } = getStorageTargetActions($t, target);
-    return [Test, Export, Import, Edit, MenuItemType.Divider, Delete];
+    const { Test, Export, Import, Offload, Restore, Edit, Delete } = getStorageTargetActions($t, target);
+    return [Test, Export, Import, Offload, Restore, Edit, MenuItemType.Divider, Delete];
   };
 
   /** Where the target actually points, condensed to one line for the table. */

@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { AssetOffloadDto } from 'src/dtos/asset.dto';
+import { AuthDto } from 'src/dtos/auth.dto';
 import {
   mapStorageTarget,
   mapStorageTransfer,
@@ -14,6 +16,7 @@ import {
 } from 'src/dtos/storage-target.dto';
 import {
   JobName,
+  Permission,
   StorageTargetKind,
   StorageTransferDirection,
   StorageTransferScopeType,
@@ -22,11 +25,24 @@ import {
 import { BaseService } from 'src/services/base.service';
 import { StorageTargetConfig, StorageTargetSecret, StorageTransferScope } from 'src/types';
 
+const QUEUE_JOB_BY_DIRECTION = {
+  [StorageTransferDirection.Export]: JobName.StorageTargetExportQueue,
+  [StorageTransferDirection.Import]: JobName.StorageTargetImportScan,
+  [StorageTransferDirection.Offload]: JobName.StorageTargetOffloadQueue,
+  [StorageTransferDirection.Restore]: JobName.StorageTargetRestoreQueue,
+} as const;
+
 @Injectable()
 export class StorageTargetService extends BaseService {
   async getAll(): Promise<StorageTargetResponseDto[]> {
     const targets = await this.storageTargetRepository.getAll();
     return targets.map((target) => mapStorageTarget(target));
+  }
+
+  /** Enabled targets only, for the user-facing offload picker. */
+  async getAvailable(): Promise<StorageTargetResponseDto[]> {
+    const targets = await this.storageTargetRepository.getAll();
+    return targets.filter(({ isEnabled }) => isEnabled).map((target) => mapStorageTarget(target));
   }
 
   async get(id: string): Promise<StorageTargetResponseDto> {
@@ -85,6 +101,17 @@ export class StorageTargetService extends BaseService {
 
   async remove(id: string): Promise<void> {
     await this.findOrFailTarget(id);
+
+    // The object ledger cascades away with the target, which for an offloaded
+    // asset is the only record of where its bytes went. Deleting the target would
+    // strand those originals, so the offload has to be undone first.
+    const offloaded = await this.storageTargetRepository.countOffloadedAssets(id);
+    if (offloaded > 0) {
+      throw new BadRequestException(
+        `Cannot delete this storage target: ${offloaded} asset(s) have been offloaded to it and hold no local copy. Restore them first.`,
+      );
+    }
+
     await this.storageTargetRepository.delete(id);
     this.remoteStorageRepository.evict(id);
   }
@@ -118,6 +145,31 @@ export class StorageTargetService extends BaseService {
     return this.startTransfer(id, dto, StorageTransferDirection.Import);
   }
 
+  startOffload(id: string, dto: StorageTransferCreateDto): Promise<StorageTransferResponseDto> {
+    return this.startTransfer(id, dto, StorageTransferDirection.Offload);
+  }
+
+  startRestore(id: string, dto: StorageTransferCreateDto): Promise<StorageTransferResponseDto> {
+    return this.startTransfer(id, dto, StorageTransferDirection.Restore);
+  }
+
+  /**
+   * Offload assets on behalf of their owner. Unlike the admin entry points this
+   * is scoped to assets the caller owns, checked before the transfer is created.
+   */
+  async offloadAssets(auth: AuthDto, dto: AssetOffloadDto): Promise<StorageTransferResponseDto> {
+    await this.requireAccess({ auth, permission: Permission.AssetOffload, ids: dto.assetIds });
+
+    return this.startTransfer(
+      dto.targetId,
+      {
+        ownerId: auth.user.id,
+        scope: { type: StorageTransferScopeType.Assets, assetIds: dto.assetIds },
+      },
+      dto.restore ? StorageTransferDirection.Restore : StorageTransferDirection.Offload,
+    );
+  }
+
   private async startTransfer(
     id: string,
     dto: StorageTransferCreateDto,
@@ -142,13 +194,7 @@ export class StorageTargetService extends BaseService {
       scope: asScope(dto.scope),
     });
 
-    await this.jobRepository.queue({
-      name:
-        direction === StorageTransferDirection.Export
-          ? JobName.StorageTargetExportQueue
-          : JobName.StorageTargetImportScan,
-      data: { transferId: transfer.id },
-    });
+    await this.jobRepository.queue({ name: QUEUE_JOB_BY_DIRECTION[direction], data: { transferId: transfer.id } });
 
     return mapStorageTransfer(transfer);
   }

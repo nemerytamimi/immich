@@ -56,6 +56,47 @@ where
   and "asset"."isOffline" = $3
   and "asset"."visibility" != $4
 
+-- StorageTargetRepository.streamAssetsForOffload
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."ownerId" = $1
+  and "asset"."deletedAt" is null
+  and "asset"."isExternal" = $2
+  and "asset"."isOffline" = $3
+  and "asset"."visibility" != $4
+  and "asset"."offloadedAt" is null
+  and exists (
+    select
+      "asset_file"."id"
+    from
+      "asset_file"
+    where
+      "asset_file"."assetId" = "asset"."id"
+      and "asset_file"."type" = $5
+  )
+  and exists (
+    select
+      "asset_file"."id"
+    from
+      "asset_file"
+    where
+      "asset_file"."assetId" = "asset"."id"
+      and "asset_file"."type" = $6
+  )
+
+-- StorageTargetRepository.streamAssetsForRestore
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."ownerId" = $1
+  and "asset"."deletedAt" is null
+  and "asset"."offloadedAt" is not null
+
 -- StorageTargetRepository.getAssetForExport
 select
   "asset"."id",
@@ -64,12 +105,41 @@ select
   "asset"."originalFileName",
   "asset"."checksum",
   "asset"."type",
+  "asset"."offloadedAt",
   "asset_exif"."fileSizeInByte"
 from
   "asset"
   left join "asset_exif" on "asset"."id" = "asset_exif"."assetId"
 where
   "asset"."id" = $1
+
+-- StorageTargetRepository.getOffloadLocation
+select
+  "storage_target"."id",
+  "storage_target"."updatedAt",
+  "storage_target"."config",
+  "storage_target"."secret",
+  "storage_target"."name",
+  "storage_target_object"."remoteKey",
+  "storage_target_object"."size"
+from
+  "storage_target_object"
+  inner join "storage_target" on "storage_target"."id" = "storage_target_object"."targetId"
+where
+  "storage_target_object"."assetId" = $1
+  and "storage_target"."isEnabled" = $2
+order by
+  "storage_target_object"."syncedAt" desc
+
+-- StorageTargetRepository.countOffloadedAssets
+select
+  count(*) as "count"
+from
+  "storage_target_object"
+  inner join "asset" on "asset"."id" = "storage_target_object"."assetId"
+where
+  "storage_target_object"."targetId" = $1
+  and "asset"."offloadedAt" is not null
 
 -- StorageTargetRepository.getObjectByAsset
 select

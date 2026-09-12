@@ -1424,6 +1424,14 @@ export type AssetMetadataBulkResponseDto = {
         [key: string]: any;
     };
 };
+export type AssetOffloadDto = {
+    /** Asset IDs */
+    assetIds: string[];
+    /** Pull the originals back onto local storage instead of pushing them out */
+    restore?: boolean;
+    /** Storage target the originals are pushed to, or pulled back from */
+    targetId: string;
+};
 export type ExifResponseDto = {
     /** City name */
     city?: string | null;
@@ -4414,6 +4422,38 @@ export function importFromStorageTarget({ id, storageTransferCreateDto }: {
     })));
 }
 /**
+ * Offload assets to a storage target
+ */
+export function offloadToStorageTarget({ id, storageTransferCreateDto }: {
+    id: string;
+    storageTransferCreateDto: StorageTransferCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StorageTransferResponseDto;
+    }>(`/admin/storage-targets/${encodeURIComponent(id)}/offload`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: storageTransferCreateDto
+    })));
+}
+/**
+ * Restore offloaded assets from a storage target
+ */
+export function restoreFromStorageTarget({ id, storageTransferCreateDto }: {
+    id: string;
+    storageTransferCreateDto: StorageTransferCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StorageTransferResponseDto;
+    }>(`/admin/storage-targets/${encodeURIComponent(id)}/restore`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: storageTransferCreateDto
+    })));
+}
+/**
  * Test a storage target
  */
 export function testStorageTarget({ id }: {
@@ -5289,6 +5329,21 @@ export function updateBulkAssetMetadata({ assetMetadataBulkUpsertDto }: {
         ...opts,
         method: "PUT",
         body: assetMetadataBulkUpsertDto
+    })));
+}
+/**
+ * Offload assets to a storage target
+ */
+export function offloadAssets({ assetOffloadDto }: {
+    assetOffloadDto: AssetOffloadDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: StorageTransferResponseDto;
+    }>("/assets/offload", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: assetOffloadDto
     })));
 }
 /**
@@ -7589,6 +7644,17 @@ export function removeAssetFromStack({ assetId, id }: {
     }));
 }
 /**
+ * Retrieve storage targets available for offloading
+ */
+export function getAvailableStorageTargets(opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageTargetResponseDto[];
+    }>("/storage-targets", {
+        ...opts
+    }));
+}
+/**
  * Delete acknowledgements
  */
 export function deleteSyncAck({ syncAckDeleteDto }: {
@@ -8442,6 +8508,7 @@ export enum MaintenanceAction {
 }
 export enum StorageFolder {
     EncodedVideo = "encoded-video",
+    RemoteCache = "remote-cache",
     Library = "library",
     Upload = "upload",
     Profile = "profile",
@@ -8475,7 +8542,9 @@ export enum StorageTransferScopeType {
 }
 export enum StorageTransferDirection {
     Export = "export",
-    Import = "import"
+    Import = "import",
+    Offload = "offload",
+    Restore = "restore"
 }
 export enum StorageTransferStatus {
     Pending = "pending",
@@ -8554,6 +8623,7 @@ export enum Permission {
     AssetShare = "asset.share",
     AssetView = "asset.view",
     AssetDownload = "asset.download",
+    AssetOffload = "asset.offload",
     AssetUpload = "asset.upload",
     AssetCopy = "asset.copy",
     AssetDerive = "asset.derive",
@@ -8910,6 +8980,12 @@ export enum JobName {
     StorageTargetExportAsset = "StorageTargetExportAsset",
     StorageTargetImportScan = "StorageTargetImportScan",
     StorageTargetImportObject = "StorageTargetImportObject",
+    StorageTargetOffloadQueue = "StorageTargetOffloadQueue",
+    StorageTargetOffloadAsset = "StorageTargetOffloadAsset",
+    StorageTargetRestoreQueue = "StorageTargetRestoreQueue",
+    StorageTargetRestoreAsset = "StorageTargetRestoreAsset",
+    StorageTargetObjectDelete = "StorageTargetObjectDelete",
+    StorageTargetCacheCleanup = "StorageTargetCacheCleanup",
     NodeSyncQueueAll = "NodeSyncQueueAll",
     NodeSyncPair = "NodeSyncPair",
     NodeSyncPushAsset = "NodeSyncPushAsset",

@@ -273,6 +273,9 @@ export class QueueService extends BaseService {
         { name: JobName.SessionCleanup },
         { name: JobName.HlsSessionCleanup },
         { name: JobName.AuditTableCleanup },
+        // Not strictly database cleanup, but it is the same idea: reclaim space
+        // taken by things nobody has looked at in a while.
+        { name: JobName.StorageTargetCacheCleanup },
       );
     }
 

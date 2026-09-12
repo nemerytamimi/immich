@@ -1783,6 +1783,142 @@
         "x-immich-state": "Beta"
       }
     },
+    "/admin/storage-targets/{id}/offload": {
+      "post": {
+        "description": "Queue a transfer that uploads a user's original files to the target and then removes the local copies. The assets stay in the library: thumbnails, metadata and album membership are untouched, and the originals are fetched back from the target on demand.",
+        "operationId": "offloadToStorageTarget",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageTransferCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Offload assets to a storage target",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/admin/storage-targets/{id}/restore": {
+      "post": {
+        "description": "Queue a transfer that downloads offloaded originals back onto local storage. Assets keep their existing IDs and metadata; nothing is re-imported as a new asset.",
+        "operationId": "restoreFromStorageTarget",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageTransferCreateDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Restore offloaded assets from a storage target",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      }
+    },
     "/admin/storage-targets/{id}/test": {
       "post": {
         "description": "Verify connectivity and write access by round-tripping a small marker object.",
@@ -5640,6 +5776,62 @@
           }
         ],
         "x-immich-permission": "asset.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/assets/offload": {
+      "post": {
+        "description": "Push the original files for the given assets to a storage target and remove the local copies, or pull them back with `restore`. The assets stay in the library either way -- thumbnails, metadata, faces and album membership are untouched, and originals are fetched back from the target on demand.",
+        "operationId": "offloadAssets",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssetOffloadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Offload assets to a storage target",
+        "tags": [
+          "Assets"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.offload",
         "x-immich-state": "Beta"
       }
     },
@@ -16069,6 +16261,55 @@
         "x-immich-state": "Stable"
       }
     },
+    "/storage-targets": {
+      "get": {
+        "description": "Retrieve the enabled storage targets that assets can be offloaded to. Credentials and connection details are never included.",
+        "operationId": "getAvailableStorageTargets",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StorageTargetResponseDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve storage targets available for offloading",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "asset.offload",
+        "x-immich-state": "Beta"
+      }
+    },
     "/sync/ack": {
       "delete": {
         "description": "Delete specific synchronization acknowledgments.",
@@ -22316,6 +22557,36 @@
         ],
         "type": "object"
       },
+      "AssetOffloadDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Asset IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "restore": {
+            "default": false,
+            "description": "Pull the originals back onto local storage instead of pushing them out",
+            "type": "boolean"
+          },
+          "targetId": {
+            "description": "Storage target the originals are pushed to, or pulled back from",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetIds",
+          "targetId"
+        ],
+        "type": "object"
+      },
       "AssetOrder": {
         "description": "Asset sort order",
         "enum": [
@@ -23993,6 +24264,12 @@
           "StorageTargetExportAsset",
           "StorageTargetImportScan",
           "StorageTargetImportObject",
+          "StorageTargetOffloadQueue",
+          "StorageTargetOffloadAsset",
+          "StorageTargetRestoreQueue",
+          "StorageTargetRestoreAsset",
+          "StorageTargetObjectDelete",
+          "StorageTargetCacheCleanup",
           "NodeSyncQueueAll",
           "NodeSyncPair",
           "NodeSyncPushAsset",
@@ -26226,6 +26503,7 @@
           "asset.share",
           "asset.view",
           "asset.download",
+          "asset.offload",
           "asset.upload",
           "asset.copy",
           "asset.derive",
@@ -30813,6 +31091,7 @@
         "description": "Storage folder",
         "enum": [
           "encoded-video",
+          "remote-cache",
           "library",
           "upload",
           "profile",
@@ -31032,7 +31311,9 @@
         "description": "Storage transfer direction",
         "enum": [
           "export",
-          "import"
+          "import",
+          "offload",
+          "restore"
         ],
         "type": "string"
       },

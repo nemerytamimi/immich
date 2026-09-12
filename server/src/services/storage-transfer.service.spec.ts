@@ -49,12 +49,23 @@ const transferStub = {
 
 const assetStub = {
   id: 'asset-1',
+  offloadedAt: null as Date | null,
   ownerId: 'user-1',
   originalPath: '/data/library/user-1/2026/2026-01-01/IMG_0001.jpg',
   originalFileName: 'IMG_0001.jpg',
   checksum: Buffer.from('checksum'),
   type: 'IMAGE',
   fileSizeInByte: 1024,
+};
+
+const locationStub = {
+  id: 'target-1',
+  name: 'MinIO',
+  updatedAt: new Date('2026-01-01'),
+  config: targetStub.config,
+  secret: targetStub.secret,
+  remoteKey: 'user-1/2026/2026-01-01/IMG_0001.jpg',
+  size: 1024,
 };
 
 const objectStub = {
@@ -96,6 +107,15 @@ const asAsyncThrow = (error: Error) =>
     [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(error) }),
   }) as unknown as AsyncIterableIterator<never>;
 
+const setupOffload = (mocks: ServiceMocks) => {
+  mocks.storageTarget.getAssetForExport.mockResolvedValue(assetStub as never);
+  mocks.storage.stat.mockResolvedValue({ size: 1024 } as never);
+  mocks.storage.createPlainReadStream.mockReturnValue(Readable.from(['data']));
+  mocks.storage.checkFileExists.mockResolvedValue(false);
+  mocks.remoteStorage.upload.mockResolvedValue({ key: objectStub.remoteKey, size: 1024 });
+  mocks.remoteStorage.head.mockResolvedValue({ key: objectStub.remoteKey, size: 1024 });
+};
+
 const setupDownload = (mocks: ServiceMocks) => {
   mocks.storage.mkdirSync.mockReturnValue(void 0);
   mocks.remoteStorage.createReadStream.mockResolvedValue(Readable.from(['data']));
@@ -125,6 +145,7 @@ describe(StorageTransferService.name, () => {
     mocks.storageTarget.updateTransfer.mockResolvedValue(transferStub);
     mocks.storageTarget.incrementTransferProgress.mockResolvedValue(transferStub);
     mocks.storageTarget.upsertObject.mockResolvedValue(objectStub);
+    mocks.storage.unlink.mockResolvedValue(void 0);
   });
 
   it('should work', () => {
@@ -250,6 +271,116 @@ describe(StorageTransferService.name, () => {
         expect.anything(),
         expect.anything(),
       );
+    });
+  });
+
+  describe('handleOffloadAsset', () => {
+    it('should upload the original and then remove the local copy', async () => {
+      setupOffload(mocks);
+      mocks.storageTarget.getObjectByAsset.mockResolvedValue(void 0);
+
+      await expect(sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.remoteStorage.upload).toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(assetStub.originalPath);
+      expect(mocks.storageTarget.setOffloadedAt).toHaveBeenCalledWith('asset-1', expect.any(Date));
+    });
+
+    it('should reuse an object already on the target instead of re-uploading', async () => {
+      setupOffload(mocks);
+      mocks.storageTarget.getObjectByAsset.mockResolvedValue(objectStub);
+
+      await expect(sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.remoteStorage.upload).not.toHaveBeenCalled();
+      expect(mocks.storage.unlink).toHaveBeenCalledWith(assetStub.originalPath);
+    });
+
+    it('should keep the local copy when the remote object cannot be read back', async () => {
+      setupOffload(mocks);
+      mocks.storageTarget.getObjectByAsset.mockResolvedValue(objectStub);
+      mocks.remoteStorage.head.mockResolvedValue(null);
+
+      await expect(sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Failed,
+      );
+
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(assetStub.originalPath);
+      expect(mocks.storageTarget.setOffloadedAt).not.toHaveBeenCalled();
+    });
+
+    it('should keep the local copy when the remote object is a different size', async () => {
+      setupOffload(mocks);
+      mocks.storageTarget.getObjectByAsset.mockResolvedValue(objectStub);
+      mocks.remoteStorage.head.mockResolvedValue({ key: objectStub.remoteKey, size: 512 });
+
+      await expect(sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Failed,
+      );
+
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(assetStub.originalPath);
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { failed: 1 });
+    });
+
+    it('should skip an asset that is already offloaded', async () => {
+      setupOffload(mocks);
+      mocks.storageTarget.getAssetForExport.mockResolvedValue({
+        ...assetStub,
+        offloadedAt: new Date('2026-01-02'),
+      } as never);
+
+      await expect(sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(assetStub.originalPath);
+    });
+  });
+
+  describe('handleRestoreAsset', () => {
+    const offloaded = { ...assetStub, offloadedAt: new Date('2026-01-02') };
+
+    it('should write the original back to its own path and keep the asset row', async () => {
+      setupDownload(mocks);
+      mocks.storageTarget.getAssetForExport.mockResolvedValue(offloaded as never);
+      mocks.storageTarget.getOffloadLocation.mockResolvedValue(locationStub as never);
+
+      await expect(sut.handleRestoreAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.storage.rename).toHaveBeenCalledWith(`${assetStub.originalPath}.restore`, assetStub.originalPath);
+      expect(mocks.storageTarget.setOffloadedAt).toHaveBeenCalledWith('asset-1', null);
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to install bytes whose checksum does not match the asset', async () => {
+      setupDownload(mocks);
+      mocks.crypto.hashFile.mockResolvedValue(Buffer.from('something else'));
+      mocks.storageTarget.getAssetForExport.mockResolvedValue(offloaded as never);
+      mocks.storageTarget.getOffloadLocation.mockResolvedValue(locationStub as never);
+
+      await expect(sut.handleRestoreAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Failed,
+      );
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storageTarget.setOffloadedAt).not.toHaveBeenCalled();
+    });
+
+    it('should fail when no enabled target holds the asset', async () => {
+      mocks.storageTarget.getAssetForExport.mockResolvedValue(offloaded as never);
+      mocks.storageTarget.getOffloadLocation.mockResolvedValue(void 0);
+
+      await expect(sut.handleRestoreAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Failed,
+      );
+
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { failed: 1 });
     });
   });
 
