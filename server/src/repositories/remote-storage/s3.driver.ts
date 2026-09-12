@@ -10,6 +10,7 @@ import { Readable } from 'node:stream';
 import { StorageTargetKind } from 'src/enum';
 import {
   assertSafeKey,
+  describeRemoteError,
   DriverInput,
   joinKey,
   RemoteObject,
@@ -35,6 +36,19 @@ export class S3Driver implements RemoteStorageDriver {
         accessKeyId: secret.accessKeyId,
         secretAccessKey: secret.secretAccessKey,
       },
+      // Since v3.729 the SDK attaches a CRC32 checksum to every request and
+      // validates one on every response, which real S3 accepts and most
+      // S3-*compatible* services do not: Ceph (Contabo, and anything else built
+      // on RADOS Gateway), Backblaze B2, and older MinIO all reject or mishandle
+      // the extra headers, typically failing uploads. `WHEN_REQUIRED` restores
+      // the pre-3.729 behaviour -- checksums are still sent for the operations
+      // that genuinely require them, and skipped otherwise.
+      //
+      // Nothing is lost by this: every upload is verified against the object's
+      // size on read-back before an offload deletes anything locally, and a
+      // restored original is checked against the asset's stored checksum.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
   }
 
@@ -64,16 +78,26 @@ export class S3Driver implements RemoteStorageDriver {
 
   async *list(prefix?: string): AsyncGenerator<RemoteObject[]> {
     let continuationToken: string | undefined;
+    const listPrefix = joinKey(this.prefix, prefix) || undefined;
 
     do {
-      const response = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: this.bucket,
-          Prefix: joinKey(this.prefix, prefix) || undefined,
-          MaxKeys: LIST_PAGE_SIZE,
-          ContinuationToken: continuationToken,
-        }),
-      );
+      let response;
+      try {
+        response = await this.client.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucket,
+            Prefix: listPrefix,
+            MaxKeys: LIST_PAGE_SIZE,
+            ContinuationToken: continuationToken,
+          }),
+        );
+      } catch (error: any) {
+        // Which bucket and prefix were being walked is the first thing anyone
+        // needs, and the SDK error carries neither.
+        throw new Error(`Failed to list s3://${this.bucket}/${listPrefix ?? ''}: ${describeRemoteError(error)}`, {
+          cause: error,
+        });
+      }
 
       const objects = (response.Contents ?? [])
         // A key ending in `/` is a directory placeholder, not a file.

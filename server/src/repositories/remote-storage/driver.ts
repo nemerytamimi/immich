@@ -52,3 +52,41 @@ export const assertSafeKey = (key: string) => {
     throw new Error(`Unsafe object key: ${key}`);
   }
 };
+
+/**
+ * Render a storage error with the detail the SDKs hide behind a terse `name`.
+ *
+ * An AWS SDK error stringifies to just `NoSuchKey: UnknownError`, which says
+ * nothing about which request failed or what the service actually answered. The
+ * HTTP status, the service's own code, and the key it was complaining about are
+ * all on the error object, and all three are what an operator needs to tell a
+ * missing object apart from a bad prefix or a permissions problem.
+ */
+export const describeRemoteError = (error: any): string => {
+  // A plain `Error` adds nothing by naming itself, but a service error's name is
+  // the whole diagnosis (`NoSuchKey`, `AccessDenied`), so it leads.
+  const name = error?.name && error.name !== 'Error' ? error.name : undefined;
+  const parts = [name, error?.message].filter(Boolean);
+
+  const status = error?.$metadata?.httpStatusCode ?? error?.status ?? error?.response?.status;
+  if (status) {
+    parts.push(`status=${status}`);
+  }
+
+  const code = error?.Code ?? error?.code;
+  if (code && code !== error?.name) {
+    parts.push(`code=${code}`);
+  }
+
+  const key = error?.Key ?? error?.key;
+  if (key) {
+    parts.push(`key=${key}`);
+  }
+
+  const requestId = error?.$metadata?.requestId;
+  if (requestId) {
+    parts.push(`requestId=${requestId}`);
+  }
+
+  return parts.join(' ');
+};
