@@ -36,6 +36,19 @@ export class S3Driver implements RemoteStorageDriver {
         accessKeyId: secret.accessKeyId,
         secretAccessKey: secret.secretAccessKey,
       },
+      // Since v3.729 the SDK attaches a CRC32 checksum to every request and
+      // validates one on every response, which real S3 accepts and most
+      // S3-*compatible* services do not: Ceph (Contabo, and anything else built
+      // on RADOS Gateway), Backblaze B2, and older MinIO all reject or mishandle
+      // the extra headers, typically failing uploads. `WHEN_REQUIRED` restores
+      // the pre-3.729 behaviour -- checksums are still sent for the operations
+      // that genuinely require them, and skipped otherwise.
+      //
+      // Nothing is lost by this: every upload is verified against the object's
+      // size on read-back before an offload deletes anything locally, and a
+      // restored original is checked against the asset's stored checksum.
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     });
   }
 
