@@ -298,6 +298,37 @@ describe(SyncNodeService.name, () => {
     });
   });
 
+  describe('cancelPairingItems', () => {
+    it('should discard outstanding work in both directions by default', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue(pairingStub);
+      mocks.syncNode.deletePendingItems.mockResolvedValue(7);
+
+      await expect(sut.cancelPairingItems('pairing-1', {})).resolves.toEqual({ count: 7 });
+
+      expect(mocks.syncNode.deletePendingItems).toHaveBeenCalledWith('pairing-1', void 0);
+      // Discarding a backlog must not re-queue it.
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
+    it('should discard one direction when asked', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue(pairingStub);
+      mocks.syncNode.deletePendingItems.mockResolvedValue(3);
+
+      await expect(sut.cancelPairingItems('pairing-1', { direction: SyncDirection.Pull })).resolves.toEqual({
+        count: 3,
+      });
+
+      expect(mocks.syncNode.deletePendingItems).toHaveBeenCalledWith('pairing-1', SyncDirection.Pull);
+    });
+
+    it('should report a pairing that does not exist', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue(void 0);
+
+      await expect(sut.cancelPairingItems('nope', {})).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.syncNode.deletePendingItems).not.toHaveBeenCalled();
+    });
+  });
+
   describe('retryPairingItems', () => {
     it('should requeue every stuck item and start it', async () => {
       mocks.syncNode.getPairing.mockResolvedValue(pairingStub);

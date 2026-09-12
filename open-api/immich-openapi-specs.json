@@ -1474,6 +1474,180 @@
         "x-immich-state": "Beta"
       }
     },
+    "/admin/storage-targets/transfers/{id}/cancel": {
+      "post": {
+        "description": "End a transfer for good. Whatever has already been transferred stays transferred; this stops the run rather than reversing it.",
+        "operationId": "cancelStorageTransfer",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Cancel a transfer",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/admin/storage-targets/transfers/{id}/pause": {
+      "post": {
+        "description": "Stop a running or pending transfer without ending it. Work already queued drains without acting, and whatever has already been transferred is kept.",
+        "operationId": "pauseStorageTransfer",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Pause a transfer",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/admin/storage-targets/transfers/{id}/resume": {
+      "post": {
+        "description": "Re-queue a paused transfer. Every direction is idempotent, so it picks up whatever is still outstanding rather than repeating completed work. The progress counters restart with the new run.",
+        "operationId": "resumeStorageTransfer",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Resume a paused transfer",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      }
+    },
     "/admin/storage-targets/{id}": {
       "delete": {
         "description": "Delete a storage target. Objects already written to the remote system are left in place.",
@@ -2298,6 +2472,74 @@
           }
         ],
         "summary": "Update a pairing",
+        "tags": [
+          "Sync nodes (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminSyncNode.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/admin/sync-nodes/pairings/{id}/cancel": {
+      "post": {
+        "description": "Throw away the items still waiting to transfer, optionally for one direction only. Nothing already transferred is undone, and the next sync re-queues whatever is still genuinely outstanding. Pause the direction first if the intent is to stop it for good rather than to clear a backlog.",
+        "operationId": "cancelSyncPairingItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncPairingCancelDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncPairingRetryResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Discard a pairing's outstanding work",
         "tags": [
           "Sync nodes (admin)"
         ],
@@ -31444,6 +31686,7 @@
         "enum": [
           "pending",
           "running",
+          "paused",
           "completed",
           "failed",
           "cancelled"
@@ -33199,6 +33442,15 @@
             "description": "Base URL of the peer",
             "format": "uri",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SyncPairingCancelDto": {
+        "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/SyncDirection",
+            "description": "Limit to one direction. Omit to discard both."
           }
         },
         "type": "object"

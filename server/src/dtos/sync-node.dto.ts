@@ -137,6 +137,12 @@ const SyncPairingRetrySchema = z
   })
   .meta({ id: 'SyncPairingRetryDto' });
 
+const SyncPairingCancelSchema = z
+  .object({
+    direction: SyncDirectionSchema.optional().describe('Limit to one direction. Omit to discard both.'),
+  })
+  .meta({ id: 'SyncPairingCancelDto' });
+
 const SyncPairingRetryResponseSchema = z
   .object({
     count: z.int().describe('How many items were put back in the queue'),
@@ -163,6 +169,7 @@ export class SyncPairingItemSearchDto extends createZodDto(SyncPairingItemSearch
 export class SyncPairingItemDto extends createZodDto(SyncPairingItemSchema) {}
 export class SyncPairingItemsResponseDto extends createZodDto(SyncPairingItemsResponseSchema) {}
 export class SyncPairingRetryDto extends createZodDto(SyncPairingRetrySchema) {}
+export class SyncPairingCancelDto extends createZodDto(SyncPairingCancelSchema) {}
 export class SyncPairingRetryResponseDto extends createZodDto(SyncPairingRetryResponseSchema) {}
 
 /** Note the absence of `apiKey`: it is write-only and must never reach a client. */

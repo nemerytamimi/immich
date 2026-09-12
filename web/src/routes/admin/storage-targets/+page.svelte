@@ -38,6 +38,9 @@
   const transfers = $derived(data.transfers);
 
   const onStorageTargetUpdate = () => invalidate('app:storage-targets');
+  // Pausing, resuming or cancelling changes a transfer's status and counters,
+  // which are part of the same page load as the targets themselves.
+  const onStorageTransferUpdate = () => invalidate('app:storage-targets');
 
   const { Create } = $derived(getStorageTargetsActions($t));
 
@@ -73,7 +76,7 @@
   };
 </script>
 
-<OnEvents {onStorageTargetUpdate} />
+<OnEvents {onStorageTargetUpdate} {onStorageTransferUpdate} />
 
 <CommandPaletteDefaultProvider name={$t('admin.storage_targets')} actions={[Create]} />
 

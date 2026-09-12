@@ -345,6 +345,22 @@ describe(SyncEngineService.name, () => {
       expect(mocks.nodeClient.downloadAsset).not.toHaveBeenCalled();
     });
 
+    it('should stop pulling once the pairing is paused', async () => {
+      // Pausing has to stop the downloads already on the queue, not just the
+      // ones not yet queued -- otherwise a paused pull keeps transferring for as
+      // long as the backlog lasts.
+      mocks.syncNode.getPairing.mockResolvedValue({ ...pairingStub, pullEnabled: false });
+      mocks.syncNode.getMappingByRemoteId.mockResolvedValue(void 0);
+      setupDownload(mocks);
+
+      await expect(sut.handlePullAsset({ pairingId: 'pairing-1', assetId: 'remote-1' })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(mocks.nodeClient.downloadAsset).not.toHaveBeenCalled();
+      expect(mocks.asset.create).not.toHaveBeenCalled();
+    });
+
     it('should map rather than duplicate when the bytes are already here', async () => {
       mocks.syncNode.getMappingByRemoteId.mockResolvedValue(void 0);
       setupDownload(mocks);

@@ -1,10 +1,13 @@
 import {
   createStorageTarget,
   deleteStorageTarget,
+  cancelStorageTransfer,
   exportToStorageTarget,
   importFromStorageTarget,
   offloadToStorageTarget,
+  pauseStorageTransfer,
   restoreFromStorageTarget,
+  resumeStorageTransfer,
   StorageTargetKind,
   testStorageTarget,
   updateStorageTarget,
@@ -12,6 +15,7 @@ import {
   type StorageTargetResponseDto,
   type StorageTargetUpdateDto,
   type StorageTransferCreateDto,
+  type StorageTransferResponseDto,
 } from '@immich/sdk';
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import {
@@ -201,6 +205,55 @@ const transferStartedMessage = ($t: MessageFormatter, direction: TransferDirecti
     case 'restore': {
       return $t('admin.storage_target_restore_started');
     }
+  }
+};
+
+export const handlePauseTransfer = async (transfer: StorageTransferResponseDto) => {
+  const $t = await getFormatter();
+
+  try {
+    await pauseStorageTransfer({ id: transfer.id });
+    toastManager.info($t('admin.storage_target_transfer_paused'));
+    eventManager.emit('StorageTransferUpdate', transfer);
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_storage_transfer'));
+  }
+};
+
+export const handleResumeTransfer = async (transfer: StorageTransferResponseDto) => {
+  const $t = await getFormatter();
+
+  try {
+    await resumeStorageTransfer({ id: transfer.id });
+    toastManager.info($t('admin.storage_target_transfer_resumed'));
+    eventManager.emit('StorageTransferUpdate', transfer);
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_storage_transfer'));
+  }
+};
+
+export const handleCancelTransfer = async (transfer: StorageTransferResponseDto) => {
+  const $t = await getFormatter();
+
+  // Cancelling stops the run but keeps whatever has already moved, which is not
+  // obvious from the button alone, so it is spelled out before anything happens.
+  const confirmed = await modalManager.showDialog({
+    title: $t('admin.storage_target_transfer_cancel'),
+    prompt: $t('admin.storage_target_transfer_cancel_prompt'),
+    confirmText: $t('admin.storage_target_transfer_cancel'),
+    confirmColor: 'danger',
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await cancelStorageTransfer({ id: transfer.id });
+    toastManager.info($t('admin.storage_target_transfer_cancelled'));
+    eventManager.emit('StorageTransferUpdate', transfer);
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_storage_transfer'));
   }
 };
 

@@ -332,6 +332,14 @@ export class SyncEngineService extends BaseService {
 
     const { pairing, credentials } = context;
 
+    // Checked here as well as before the walk: pausing a pairing has to stop the
+    // downloads already sitting on the queue, not just the ones not yet queued.
+    // The push side has always done this; without the same check here, pausing a
+    // pull kept transferring for as long as the backlog lasted.
+    if (!pairing.pullEnabled) {
+      return JobStatus.Skipped;
+    }
+
     const existing = await this.syncNodeRepository.getMappingByRemoteId(pairingId, assetId);
     if (existing) {
       await this.syncNodeRepository.markSucceeded(pairingId, SyncDirection.Pull, assetId);

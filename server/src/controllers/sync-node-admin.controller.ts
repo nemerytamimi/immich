@@ -7,6 +7,7 @@ import {
   SyncNodeResponseDto,
   SyncNodeTestResponseDto,
   SyncNodeUpdateDto,
+  SyncPairingCancelDto,
   SyncPairingCreateDto,
   SyncPairingItemSearchDto,
   SyncPairingItemsResponseDto,
@@ -166,6 +167,24 @@ export class SyncNodeAdminController {
     @Body() dto: SyncPairingRetryDto,
   ): Promise<SyncPairingRetryResponseDto> {
     return this.service.retryPairingItems(id, dto);
+  }
+
+  @Post('pairings/:id/cancel')
+  @Authenticated({ permission: Permission.AdminSyncNodeUpdate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: "Discard a pairing's outstanding work",
+    description:
+      'Throw away the items still waiting to transfer, optionally for one direction only. Nothing already ' +
+      'transferred is undone, and the next sync re-queues whatever is still genuinely outstanding. Pause the ' +
+      'direction first if the intent is to stop it for good rather than to clear a backlog.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  cancelSyncPairingItems(
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: SyncPairingCancelDto,
+  ): Promise<SyncPairingRetryResponseDto> {
+    return this.service.cancelPairingItems(id, dto);
   }
 
   @Put('pairings/:id')

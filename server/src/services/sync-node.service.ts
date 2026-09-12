@@ -9,6 +9,7 @@ import {
   SyncNodeResponseDto,
   SyncNodeTestResponseDto,
   SyncNodeUpdateDto,
+  SyncPairingCancelDto,
   SyncPairingCreateDto,
   SyncPairingItemSearchDto,
   SyncPairingItemsResponseDto,
@@ -189,6 +190,28 @@ export class SyncNodeService extends BaseService {
     }
 
     return { count: items.length };
+  }
+
+  /**
+   * Discard a pairing's outstanding work.
+   *
+   * Pausing a direction stops new work and lets queued jobs drain harmlessly,
+   * but the backlog stays in the ledger and resumes with it. This is the other
+   * half: it throws that backlog away. Nothing already transferred is undone,
+   * and the next sync re-queues anything still genuinely outstanding, so this
+   * abandons the current run rather than the pairing.
+   */
+  async cancelPairingItems(pairingId: string, dto: SyncPairingCancelDto): Promise<SyncPairingRetryResponseDto> {
+    await this.findPairingOrFail(pairingId);
+
+    const count = await this.syncNodeRepository.deletePendingItems(pairingId, dto.direction);
+
+    if (count > 0) {
+      const scope = dto.direction ?? 'push and pull';
+      this.logger.log(`Discarded ${count} outstanding ${scope} item(s) for pairing ${pairingId}`);
+    }
+
+    return { count };
   }
 
   async createPairing(id: string, dto: SyncPairingCreateDto): Promise<SyncPairingResponseDto> {

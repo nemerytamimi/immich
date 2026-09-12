@@ -226,6 +226,24 @@ export class SyncNodeRepository {
   }
 
   /**
+   * Drop outstanding work for a pairing, optionally just one direction.
+   *
+   * Only the ledger is cleared. Jobs already on the queue are left alone; they
+   * find no ledger row, do their own idempotency check, and stop. Cursors are
+   * untouched on purpose -- discarding a backlog should not make the next run
+   * re-walk history it has already been through.
+   */
+  async deletePendingItems(nodeUserId: string, direction?: SyncDirection): Promise<number> {
+    const result = await this.db
+      .deleteFrom('sync_node_item')
+      .where('nodeUserId', '=', nodeUserId)
+      .$if(!!direction, (eb) => eb.where('direction', '=', direction!))
+      .executeTakeFirst();
+
+    return Number(result.numDeletedRows ?? 0);
+  }
+
+  /**
    * Puts items that ran out of attempts back in the queue's reach.
    *
    * Resetting the attempt count is the whole point: the retry pass selects on

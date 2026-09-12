@@ -605,26 +605,6 @@ export type StorageTargetCreateDto = {
     name: string;
     secret: StorageTargetSecretDto;
 };
-export type StorageTargetUpdateDto = {
-    config?: StorageTargetConfigDto;
-    /** Whether this target can be used for transfers */
-    isEnabled?: boolean;
-    /** Human-readable name, unique across targets */
-    name?: string;
-    secret?: StorageTargetSecretDto;
-};
-export type StorageTransferScopeDto = {
-    /** Albums to transfer, when type is "albums" */
-    albumIds?: string[];
-    /** Assets to transfer, when type is "assets" */
-    assetIds?: string[];
-    "type": StorageTransferScopeType;
-};
-export type StorageTransferCreateDto = {
-    /** User whose assets are exported, or who will own the imported assets */
-    ownerId: string;
-    scope?: StorageTransferScopeDto;
-};
 export type StorageTransferResponseDto = {
     /** Number of items completed */
     completedCount: number;
@@ -648,6 +628,26 @@ export type StorageTransferResponseDto = {
     targetId: string;
     /** Number of items queued */
     totalCount: number;
+};
+export type StorageTargetUpdateDto = {
+    config?: StorageTargetConfigDto;
+    /** Whether this target can be used for transfers */
+    isEnabled?: boolean;
+    /** Human-readable name, unique across targets */
+    name?: string;
+    secret?: StorageTargetSecretDto;
+};
+export type StorageTransferScopeDto = {
+    /** Albums to transfer, when type is "albums" */
+    albumIds?: string[];
+    /** Assets to transfer, when type is "assets" */
+    assetIds?: string[];
+    "type": StorageTransferScopeType;
+};
+export type StorageTransferCreateDto = {
+    /** User whose assets are exported, or who will own the imported assets */
+    ownerId: string;
+    scope?: StorageTransferScopeDto;
 };
 export type StorageTargetTestResponseDto = {
     /** Failure reason when `ok` is false */
@@ -724,6 +724,14 @@ export type SyncPairingUpdateDto = {
     /** Replacement API key for the paired user */
     remoteApiKey?: string;
 };
+export type SyncPairingCancelDto = {
+    /** Limit to one direction. Omit to discard both. */
+    direction?: SyncDirection;
+};
+export type SyncPairingRetryResponseDto = {
+    /** How many items were put back in the queue */
+    count: number;
+};
 export type SyncPairingItemDto = {
     /** Local asset ID when pushing, the ID on the peer when pulling */
     assetId: string;
@@ -755,10 +763,6 @@ export type SyncPairingItemsResponseDto = {
 export type SyncPairingRetryDto = {
     /** Ledger entries to requeue. Omit to requeue every item that is out of attempts. */
     itemIds?: string[];
-};
-export type SyncPairingRetryResponseDto = {
-    /** How many items were put back in the queue */
-    count: number;
 };
 export type SyncNodeUpdateDto = {
     /** API key for the peer. Write-only: never returned. */
@@ -4350,6 +4354,48 @@ export function createStorageTarget({ storageTargetCreateDto }: {
     })));
 }
 /**
+ * Cancel a transfer
+ */
+export function cancelStorageTransfer({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageTransferResponseDto;
+    }>(`/admin/storage-targets/transfers/${encodeURIComponent(id)}/cancel`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Pause a transfer
+ */
+export function pauseStorageTransfer({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageTransferResponseDto;
+    }>(`/admin/storage-targets/transfers/${encodeURIComponent(id)}/pause`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
+ * Resume a paused transfer
+ */
+export function resumeStorageTransfer({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageTransferResponseDto;
+    }>(`/admin/storage-targets/transfers/${encodeURIComponent(id)}/resume`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Delete a storage target
  */
 export function deleteStorageTarget({ id }: {
@@ -4544,6 +4590,22 @@ export function updateSyncPairing({ id, syncPairingUpdateDto }: {
         ...opts,
         method: "PUT",
         body: syncPairingUpdateDto
+    })));
+}
+/**
+ * Discard a pairing's outstanding work
+ */
+export function cancelSyncPairingItems({ id, syncPairingCancelDto }: {
+    id: string;
+    syncPairingCancelDto: SyncPairingCancelDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: SyncPairingRetryResponseDto;
+    }>(`/admin/sync-nodes/pairings/${encodeURIComponent(id)}/cancel`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: syncPairingCancelDto
     })));
 }
 /**
@@ -8535,11 +8597,6 @@ export enum StorageTargetKind {
     Webdav = "webdav",
     Local = "local"
 }
-export enum StorageTransferScopeType {
-    All = "all",
-    Albums = "albums",
-    Assets = "assets"
-}
 export enum StorageTransferDirection {
     Export = "export",
     Import = "import",
@@ -8549,9 +8606,15 @@ export enum StorageTransferDirection {
 export enum StorageTransferStatus {
     Pending = "pending",
     Running = "running",
+    Paused = "paused",
     Completed = "completed",
     Failed = "failed",
     Cancelled = "cancelled"
+}
+export enum StorageTransferScopeType {
+    All = "all",
+    Albums = "albums",
+    Assets = "assets"
 }
 export enum SyncNodeStatus {
     Unknown = "unknown",
@@ -8560,14 +8623,14 @@ export enum SyncNodeStatus {
     Unauthorized = "unauthorized",
     Incompatible = "incompatible"
 }
+export enum SyncDirection {
+    Push = "push",
+    Pull = "pull"
+}
 export enum SyncItemFilter {
     All = "all",
     Active = "active",
     Stuck = "stuck"
-}
-export enum SyncDirection {
-    Push = "push",
-    Pull = "pull"
 }
 export enum SyncItemStatus {
     Pending = "pending",

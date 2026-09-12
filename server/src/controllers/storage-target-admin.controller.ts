@@ -151,6 +151,48 @@ export class StorageTargetAdminController {
     return this.service.startRestore(id, dto);
   }
 
+  @Post('transfers/:id/pause')
+  @Authenticated({ permission: Permission.AdminStorageTargetUpdate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Pause a transfer',
+    description:
+      'Stop a running or pending transfer without ending it. Work already queued drains without acting, and whatever ' +
+      'has already been transferred is kept.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  pauseStorageTransfer(@Param() { id }: UUIDParamDto): Promise<StorageTransferResponseDto> {
+    return this.service.pauseTransfer(id);
+  }
+
+  @Post('transfers/:id/resume')
+  @Authenticated({ permission: Permission.AdminStorageTargetUpdate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Resume a paused transfer',
+    description:
+      'Re-queue a paused transfer. Every direction is idempotent, so it picks up whatever is still outstanding ' +
+      'rather than repeating completed work. The progress counters restart with the new run.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  resumeStorageTransfer(@Param() { id }: UUIDParamDto): Promise<StorageTransferResponseDto> {
+    return this.service.resumeTransfer(id);
+  }
+
+  @Post('transfers/:id/cancel')
+  @Authenticated({ permission: Permission.AdminStorageTargetUpdate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Cancel a transfer',
+    description:
+      'End a transfer for good. Whatever has already been transferred stays transferred; this stops the run rather ' +
+      'than reversing it.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  cancelStorageTransfer(@Param() { id }: UUIDParamDto): Promise<StorageTransferResponseDto> {
+    return this.service.cancelTransfer(id);
+  }
+
   @Get(':id/transfers')
   @Authenticated({ permission: Permission.AdminStorageTargetRead, admin: true })
   @Endpoint({

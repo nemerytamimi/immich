@@ -17,8 +17,8 @@
     value ? DateTime.fromISO(value).setLocale($locale).toRelative() : $t('admin.sync_pairing_never_synced');
 
   const getActions = (pairing: SyncPairingResponseDto) => {
-    const { Details, SyncNow, Unpair } = getSyncPairingActions($t, pairing);
-    return [Details, SyncNow, Unpair];
+    const { Details, SyncNow, DiscardOutstanding, Unpair } = getSyncPairingActions($t, pairing);
+    return [Details, SyncNow, DiscardOutstanding, Unpair];
   };
 </script>
 
