@@ -104,20 +104,18 @@ export class SyncNodeRepository {
       .executeTakeFirst();
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
-  async getMappedRemoteIds(nodeUserId: string, remoteAssetIds: string[]): Promise<Set<string>> {
+  /** Matched remote assets and when each was last compared, so a pull can skip the unchanged ones. */
+  getMappingsByRemoteIds(nodeUserId: string, remoteAssetIds: string[]) {
     if (remoteAssetIds.length === 0) {
-      return new Set();
+      return Promise.resolve([]);
     }
 
-    const rows = await this.db
+    return this.db
       .selectFrom('sync_node_asset')
-      .select('remoteAssetId')
+      .select(['remoteAssetId', 'updatedAt'])
       .where('nodeUserId', '=', nodeUserId)
       .where('remoteAssetId', 'in', remoteAssetIds)
       .execute();
-
-    return new Set(rows.map(({ remoteAssetId }) => remoteAssetId));
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
@@ -226,18 +224,24 @@ export class SyncNodeRepository {
   }
 
   /**
-   * Drop outstanding work for a pairing, optionally just one direction.
+   * Drop outstanding work for a pairing, optionally just one direction or just
+   * the given entries.
    *
    * Only the ledger is cleared. Jobs already on the queue are left alone; they
    * find no ledger row, do their own idempotency check, and stop. Cursors are
    * untouched on purpose -- discarding a backlog should not make the next run
    * re-walk history it has already been through.
    */
-  async deletePendingItems(nodeUserId: string, direction?: SyncDirection): Promise<number> {
+  async deletePendingItems(nodeUserId: string, direction?: SyncDirection, itemIds?: string[]): Promise<number> {
+    if (itemIds && itemIds.length === 0) {
+      return 0;
+    }
+
     const result = await this.db
       .deleteFrom('sync_node_item')
       .where('nodeUserId', '=', nodeUserId)
       .$if(!!direction, (eb) => eb.where('direction', '=', direction!))
+      .$if(itemIds !== undefined, (eb) => eb.where('id', 'in', itemIds!))
       .executeTakeFirst();
 
     return Number(result.numDeletedRows ?? 0);
@@ -428,6 +432,69 @@ export class SyncNodeRepository {
         'asset_exif.description',
       ])
       .where('asset.id', 'in', ids)
+      .execute();
+  }
+
+  // -- metadata --
+
+  /** This node's side of a metadata comparison for one asset. Tags come from {@link getAssetTagValues}. */
+  getAssetMetadata(assetId: string) {
+    return this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
+      .select([
+        'asset.id',
+        'asset.ownerId',
+        'asset.isFavorite',
+        'asset.visibility',
+        'asset.fileCreatedAt',
+        'asset.updatedAt',
+        'asset.updateId',
+        'asset_exif.dateTimeOriginal',
+        'asset_exif.timeZone',
+        'asset_exif.latitude',
+        'asset_exif.longitude',
+        'asset_exif.rating',
+        'asset_exif.description',
+        'asset_exif.updatedAt as exifUpdatedAt',
+      ])
+      .where('asset.id', '=', assetId)
+      .executeTakeFirst();
+  }
+
+  async getAssetTagValues(assetId: string): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('tag_asset')
+      .innerJoin('tag', 'tag.id', 'tag_asset.tagId')
+      .select('tag.value')
+      .where('tag_asset.assetId', '=', assetId)
+      .execute();
+
+    return rows.map(({ value }) => value);
+  }
+
+  /**
+   * Forget where metadata was last reconciled for a pairing, so the next push of
+   * each matched asset compares its metadata again instead of skipping it as
+   * unchanged. This is what a full metadata pass starts from.
+   */
+  async clearMetadataMarks(nodeUserId: string): Promise<void> {
+    await this.db
+      .updateTable('sync_node_asset')
+      .set({ metadataUpdateId: null })
+      .where('nodeUserId', '=', nodeUserId)
+      .execute();
+  }
+
+  /** One page of a pairing's matched assets, in id order, for walking all of them. */
+  getAssetMappingPage(nodeUserId: string, afterId: string | null, limit: number) {
+    return this.db
+      .selectFrom('sync_node_asset')
+      .select(['sync_node_asset.id', 'sync_node_asset.localAssetId'])
+      .where('nodeUserId', '=', nodeUserId)
+      .$if(!!afterId, (qb) => qb.where('sync_node_asset.id', '>', afterId!))
+      .orderBy('sync_node_asset.id asc')
+      .limit(limit)
       .execute();
   }
 

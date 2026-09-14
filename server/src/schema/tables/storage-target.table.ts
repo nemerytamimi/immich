@@ -91,6 +91,23 @@ export class StorageTargetTransferTable {
   @Column({ type: 'integer', default: 0 })
   failedCount!: Generated<number>;
 
+  /**
+   * Items the walk left out because they are not ready to transfer yet -- an
+   * offload candidate with no thumbnail or preview, say. They are not in the
+   * total, so without this a run that skipped everything reads as nothing to do.
+   */
+  @Column({ type: 'integer', default: 0 })
+  skippedCount!: Generated<number>;
+
+  /**
+   * The run the transfer is on. Resuming starts a new one, and every job carries
+   * the run that queued it, so jobs still on the queue from before a pause see
+   * the mismatch and drain without acting or counting. Null only for transfers
+   * created before runs existed.
+   */
+  @Column({ type: 'uuid', nullable: true, default: null })
+  runId!: string | null;
+
   @Column({ type: 'timestamp with time zone', nullable: true, default: null })
   startedAt!: Timestamp | null;
 
@@ -108,6 +125,51 @@ export class StorageTargetTransferTable {
 
   @UpdateIdColumn({ index: true })
   updateId!: Generated<string>;
+}
+
+/**
+ * Items that failed within a transfer, and what went wrong with each, so a run
+ * with failures can be looked at file by file and retried without walking the
+ * whole library again. A row goes once its item succeeds, and every row goes
+ * with the transfer when it is removed from the history.
+ */
+@Table('storage_target_transfer_item')
+@Unique({ columns: ['transferId', 'itemKey'] })
+export class StorageTargetTransferItemTable {
+  @PrimaryGeneratedColumn()
+  id!: Generated<string>;
+
+  @ForeignKeyColumn(() => StorageTargetTransferTable, { onDelete: 'CASCADE', onUpdate: 'CASCADE', index: false })
+  transferId!: string;
+
+  /** What identifies the item within its transfer: the asset id, or the remote key for an import. */
+  @Column()
+  itemKey!: string;
+
+  /** Deliberately not a foreign key: a failure is still worth reading once its asset is gone. */
+  @Column({ type: 'uuid', nullable: true, default: null })
+  assetId!: string | null;
+
+  @Column({ type: 'character varying', nullable: true, default: null })
+  remoteKey!: string | null;
+
+  @Column({ type: 'character varying', nullable: true, default: null })
+  fileName!: string | null;
+
+  @Column({ type: 'bigint', nullable: true, default: null })
+  size!: number | null;
+
+  @Column({ type: 'integer', default: 1 })
+  attempts!: Generated<number>;
+
+  @Column()
+  error!: string;
+
+  @CreateDateColumn()
+  createdAt!: Generated<Timestamp>;
+
+  @UpdateDateColumn()
+  updatedAt!: Generated<Timestamp>;
 }
 
 /**

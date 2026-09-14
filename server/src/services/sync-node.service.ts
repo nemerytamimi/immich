@@ -36,6 +36,15 @@ const REQUIRED_REMOTE_PERMISSIONS = [
   'album.create',
   'albumAsset.create',
   'adminUser.read',
+  // Reconciling metadata on matched assets names faces and tags them on the peer.
+  'face.read',
+  'face.update',
+  'person.read',
+  'person.create',
+  'person.update',
+  'tag.read',
+  'tag.create',
+  'tag.asset',
 ];
 
 @Injectable()
@@ -204,10 +213,10 @@ export class SyncNodeService extends BaseService {
   async cancelPairingItems(pairingId: string, dto: SyncPairingCancelDto): Promise<SyncPairingRetryResponseDto> {
     await this.findPairingOrFail(pairingId);
 
-    const count = await this.syncNodeRepository.deletePendingItems(pairingId, dto.direction);
+    const count = await this.syncNodeRepository.deletePendingItems(pairingId, dto.direction, dto.itemIds);
 
     if (count > 0) {
-      const scope = dto.direction ?? 'push and pull';
+      const scope = dto.itemIds ? 'selected' : (dto.direction ?? 'push and pull');
       this.logger.log(`Discarded ${count} outstanding ${scope} item(s) for pairing ${pairingId}`);
     }
 
@@ -271,6 +280,21 @@ export class SyncNodeService extends BaseService {
   async removePairing(pairingId: string): Promise<void> {
     await this.findPairingOrFail(pairingId);
     await this.syncNodeRepository.deletePairing(pairingId);
+  }
+
+  /**
+   * Compare the metadata of every asset a pairing has matched, rather than only
+   * those that changed since the last run. Edits made on the peer to dates,
+   * places, tags and face names do not reach a regular pull, and this is also how
+   * a node that lost its metadata gets it back from the other.
+   */
+  async reconcilePairingMetadata(pairingId: string): Promise<void> {
+    await this.findPairingOrFail(pairingId);
+
+    // Without clearing these, every asset whose local copy has not changed since
+    // it was last compared would be skipped as already in step.
+    await this.syncNodeRepository.clearMetadataMarks(pairingId);
+    await this.jobRepository.queue({ name: JobName.NodeSyncMetadataQueue, data: { pairingId } });
   }
 
   /** Run one pairing now, rather than waiting for the schedule. */

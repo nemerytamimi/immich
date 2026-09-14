@@ -4,6 +4,7 @@ import {
   deleteSyncNode,
   deleteSyncPairing,
   cancelSyncPairingItems,
+  reconcileSyncPairingMetadata,
   retrySyncPairingItems,
   syncPairingNow,
   testSyncNode,
@@ -21,6 +22,7 @@ import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import {
   mdiAccountSyncOutline,
   mdiConnection,
+  mdiDatabaseSyncOutline,
   mdiPencilOutline,
   mdiPlusBoxOutline,
   mdiProgressClock,
@@ -97,13 +99,44 @@ export const getSyncPairingActions = ($t: MessageFormatter, pairing: SyncPairing
     onAction: () => handleDeletePairing(pairing),
   };
 
+  const ReconcileMetadata: ActionItem = {
+    icon: mdiDatabaseSyncOutline,
+    title: $t('admin.sync_pairing_reconcile_metadata'),
+    onAction: () => handleReconcileMetadata(pairing),
+  };
+
   const DiscardOutstanding: ActionItem = {
     icon: mdiCloseCircleOutline,
     title: $t('admin.sync_pairing_cancel'),
     onAction: () => handleCancelPairingItems(pairing),
   };
 
-  return { Details, SyncNow, DiscardOutstanding, Unpair };
+  return { Details, SyncNow, ReconcileMetadata, DiscardOutstanding, Unpair };
+};
+
+/**
+ * Queues a comparison of every matched photo's metadata. Confirmed, because it
+ * writes to both servers and the rule for which side wins is worth reading first.
+ */
+export const handleReconcileMetadata = async (pairing: SyncPairingResponseDto) => {
+  const $t = await getFormatter();
+
+  const confirmed = await modalManager.showDialog({
+    title: $t('admin.sync_pairing_reconcile_metadata'),
+    prompt: $t('admin.sync_pairing_reconcile_metadata_prompt', { values: { name: pairing.remoteUserEmail } }),
+    confirmText: $t('admin.sync_pairing_reconcile_metadata'),
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await reconcileSyncPairingMetadata({ id: pairing.id });
+    toastManager.info($t('admin.sync_pairing_reconcile_metadata_queued'));
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_reconcile_sync_metadata'));
+  }
 };
 
 /**
@@ -283,6 +316,35 @@ export const handleRetryStuckItem = async (pairing: SyncPairingResponseDto, item
   }
 
   return retryItems(pairing.id, { itemIds: [item.id] });
+};
+
+/**
+ * Drops one item from the pairing's work list without transferring it. Nothing
+ * is deleted from either server, and a later sync re-queues the item only if it
+ * still needs to move, so this is how a stuck entry stops taking up space.
+ */
+export const handleRemoveStuckItem = async (pairing: SyncPairingResponseDto, item: SyncPairingItemDto) => {
+  const $t = await getFormatter();
+
+  const confirmed = await modalManager.showDialog({
+    title: $t('admin.sync_pairing_item_remove'),
+    prompt: $t('admin.sync_pairing_item_remove_prompt', { values: { name: item.fileName ?? item.assetId } }),
+    confirmText: $t('admin.sync_pairing_item_remove'),
+    confirmColor: 'danger',
+  });
+
+  if (!confirmed) {
+    return false;
+  }
+
+  try {
+    await cancelSyncPairingItems({ id: pairing.id, syncPairingCancelDto: { itemIds: [item.id] } });
+    toastManager.info($t('admin.sync_pairing_item_removed'));
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_remove_sync_item'));
+    return false;
+  }
 };
 
 const retryItems = async (id: string, syncPairingRetryDto: { itemIds?: string[] }) => {

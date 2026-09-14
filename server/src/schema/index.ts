@@ -80,6 +80,7 @@ import { StackTable } from 'src/schema/tables/stack.table';
 import {
   StorageTargetObjectTable,
   StorageTargetTable,
+  StorageTargetTransferItemTable,
   StorageTargetTransferTable,
 } from 'src/schema/tables/storage-target.table';
 import { SessionSyncCheckpointTable } from 'src/schema/tables/sync-checkpoint.table';
@@ -160,6 +161,7 @@ export class ImmichDatabase {
     StackTable,
     StorageTargetTable,
     StorageTargetTransferTable,
+    StorageTargetTransferItemTable,
     StorageTargetObjectTable,
     SyncNodeTable,
     SyncNodeUserTable,
@@ -295,6 +297,7 @@ export interface DB {
 
   storage_target: StorageTargetTable;
   storage_target_transfer: StorageTargetTransferTable;
+  storage_target_transfer_item: StorageTargetTransferItemTable;
   storage_target_object: StorageTargetObjectTable;
 
   sync_node: SyncNodeTable;

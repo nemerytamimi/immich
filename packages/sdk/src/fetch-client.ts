@@ -623,6 +623,8 @@ export type StorageTransferResponseDto = {
     ownerId: string;
     /** Where an import scanned, or null for the owner's own prefixes */
     prefix: string | null;
+    /** Number of items left out because they are not ready to transfer yet, such as assets with no thumbnail */
+    skippedCount: number;
     /** Start date */
     startedAt: string | null;
     status: StorageTransferStatus;
@@ -630,6 +632,40 @@ export type StorageTransferResponseDto = {
     targetId: string;
     /** Number of items queued */
     totalCount: number;
+};
+export type StorageTransferItemDto = {
+    /** Local asset ID, for an export, offload or restore */
+    assetId: string | null;
+    /** How many times this item has failed */
+    attempts: number;
+    /** When the item first failed */
+    createdAt: string;
+    /** Why the last attempt failed */
+    error: string;
+    /** File name, where one is known */
+    fileName: string | null;
+    /** Failure record ID */
+    id: string;
+    /** Object key on the target, where one is known */
+    remoteKey: string | null;
+    /** Size in bytes, where known */
+    size: number | null;
+    /** When the item last failed */
+    updatedAt: string;
+};
+export type StorageTransferItemsResponseDto = {
+    /** Failed items on this page, most recent first */
+    items: StorageTransferItemDto[];
+    /** How many items failed, across every page */
+    total: number;
+};
+export type StorageTransferRetryDto = {
+    /** Failed items to retry. Omit to retry every failed item. */
+    itemIds?: string[];
+};
+export type StorageTransferCountResponseDto = {
+    /** How many were affected */
+    count: number;
 };
 export type StorageTargetUpdateDto = {
     config?: StorageTargetConfigDto;
@@ -731,6 +767,8 @@ export type SyncPairingUpdateDto = {
 export type SyncPairingCancelDto = {
     /** Limit to one direction. Omit to discard both. */
     direction?: SyncDirection;
+    /** Remove only these ledger entries, such as items that need attention. Omit to discard everything. */
+    itemIds?: string[];
 };
 export type SyncPairingRetryResponseDto = {
     /** How many items were put back in the queue */
@@ -4358,6 +4396,17 @@ export function createStorageTarget({ storageTargetCreateDto }: {
     })));
 }
 /**
+ * Remove a transfer from the history
+ */
+export function deleteStorageTransfer({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/storage-targets/transfers/${encodeURIComponent(id)}`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Cancel a transfer
  */
 export function cancelStorageTransfer({ id }: {
@@ -4369,6 +4418,24 @@ export function cancelStorageTransfer({ id }: {
     }>(`/admin/storage-targets/transfers/${encodeURIComponent(id)}/cancel`, {
         ...opts,
         method: "POST"
+    }));
+}
+/**
+ * Retrieve the failed items of a transfer
+ */
+export function getStorageTransferItems({ id, page, size }: {
+    id: string;
+    page?: number;
+    size?: number;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageTransferItemsResponseDto;
+    }>(`/admin/storage-targets/transfers/${encodeURIComponent(id)}/items${QS.query(QS.explode({
+        page,
+        size
+    }))}`, {
+        ...opts
     }));
 }
 /**
@@ -4398,6 +4465,22 @@ export function resumeStorageTransfer({ id }: {
         ...opts,
         method: "POST"
     }));
+}
+/**
+ * Retry the failed items of a transfer
+ */
+export function retryStorageTransferItems({ id, storageTransferRetryDto }: {
+    id: string;
+    storageTransferRetryDto: StorageTransferRetryDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageTransferCountResponseDto;
+    }>(`/admin/storage-targets/transfers/${encodeURIComponent(id)}/retry`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: storageTransferRetryDto
+    })));
 }
 /**
  * Delete a storage target
@@ -4518,6 +4601,20 @@ export function testStorageTarget({ id }: {
     }));
 }
 /**
+ * Clear finished transfers from the history
+ */
+export function clearStorageTargetTransfers({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: StorageTransferCountResponseDto;
+    }>(`/admin/storage-targets/${encodeURIComponent(id)}/transfers`, {
+        ...opts,
+        method: "DELETE"
+    }));
+}
+/**
  * Retrieve transfer history
  */
 export function getStorageTargetTransfers({ id }: {
@@ -4630,6 +4727,17 @@ export function getSyncPairingItems({ filter, id, page, size }: {
         size
     }))}`, {
         ...opts
+    }));
+}
+/**
+ * Reconcile metadata for a pairing
+ */
+export function reconcileSyncPairingMetadata({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/admin/sync-nodes/pairings/${encodeURIComponent(id)}/reconcile-metadata`, {
+        ...opts,
+        method: "POST"
     }));
 }
 /**
@@ -9058,7 +9166,8 @@ export enum JobName {
     NodeSyncPushAsset = "NodeSyncPushAsset",
     NodeSyncRetryFailed = "NodeSyncRetryFailed",
     NodeSyncPullAsset = "NodeSyncPullAsset",
-    NodeSyncAlbums = "NodeSyncAlbums"
+    NodeSyncAlbums = "NodeSyncAlbums",
+    NodeSyncMetadataQueue = "NodeSyncMetadataQueue"
 }
 export enum SearchOrderField {
     FileCreatedAt = "fileCreatedAt",

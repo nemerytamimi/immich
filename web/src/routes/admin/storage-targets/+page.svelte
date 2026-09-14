@@ -189,7 +189,7 @@
         {#each targets as target (target.id)}
           {@const targetTransfers = transfers[target.id] ?? []}
           {#if targetTransfers.length > 0}
-            <TransferHistory name={target.name} transfers={targetTransfers} />
+            <TransferHistory {target} transfers={targetTransfers} />
           {/if}
         {/each}
       {:else}

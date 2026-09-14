@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators';
 import {
@@ -6,8 +6,12 @@ import {
   StorageTargetResponseDto,
   StorageTargetTestResponseDto,
   StorageTargetUpdateDto,
+  StorageTransferCountResponseDto,
   StorageTransferCreateDto,
+  StorageTransferItemSearchDto,
+  StorageTransferItemsResponseDto,
   StorageTransferResponseDto,
+  StorageTransferRetryDto,
 } from 'src/dtos/storage-target.dto';
 import { ApiTag, Permission } from 'src/enum';
 import { Authenticated } from 'src/middleware/auth.guard';
@@ -171,8 +175,10 @@ export class StorageTargetAdminController {
   @Endpoint({
     summary: 'Resume a paused transfer',
     description:
-      'Re-queue a paused transfer. Every direction is idempotent, so it picks up whatever is still outstanding ' +
-      'rather than repeating completed work. The progress counters restart with the new run.',
+      'Re-queue a paused transfer under a new run. Every direction is idempotent, so it picks up whatever is still ' +
+      'outstanding rather than repeating completed work, and work queued before the pause no longer acts. Completed ' +
+      'items stay counted, except for an export, whose count restarts because its walk re-counts what is already on ' +
+      'the target.',
     history: new HistoryBuilder().added('v3').beta('v3'),
   })
   resumeStorageTransfer(@Param() { id }: UUIDParamDto): Promise<StorageTransferResponseDto> {
@@ -191,6 +197,67 @@ export class StorageTargetAdminController {
   })
   cancelStorageTransfer(@Param() { id }: UUIDParamDto): Promise<StorageTransferResponseDto> {
     return this.service.cancelTransfer(id);
+  }
+
+  @Get('transfers/:id/items')
+  @Authenticated({ permission: Permission.AdminStorageTargetRead, admin: true })
+  @Endpoint({
+    summary: 'Retrieve the failed items of a transfer',
+    description:
+      'List the files a transfer failed on, with the file name, size, reason and attempt count for each, most ' +
+      'recent first. An item leaves the list once a later attempt succeeds.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  getStorageTransferItems(
+    @Param() { id }: UUIDParamDto,
+    @Query() dto: StorageTransferItemSearchDto,
+  ): Promise<StorageTransferItemsResponseDto> {
+    return this.service.getTransferFailures(id, dto);
+  }
+
+  @Post('transfers/:id/retry')
+  @Authenticated({ permission: Permission.AdminStorageTargetUpdate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Retry the failed items of a transfer',
+    description:
+      'Queue failed items again under the transfer, without walking the whole library. Omit the item list to retry ' +
+      'every failure. A paused transfer retries its failures when it is resumed instead.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  retryStorageTransferItems(
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: StorageTransferRetryDto,
+  ): Promise<StorageTransferCountResponseDto> {
+    return this.service.retryTransferFailures(id, dto);
+  }
+
+  @Delete('transfers/:id')
+  @Authenticated({ permission: Permission.AdminStorageTargetUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Remove a transfer from the history',
+    description:
+      'Delete a completed, failed or cancelled transfer and its failure records. Nothing that was transferred is ' +
+      'affected. Cancel a transfer that is still going before removing it.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  deleteStorageTransfer(@Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.deleteTransfer(id);
+  }
+
+  @Delete(':id/transfers')
+  @Authenticated({ permission: Permission.AdminStorageTargetUpdate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Clear finished transfers from the history',
+    description:
+      'Delete every completed, failed and cancelled transfer for a storage target, with their failure records. ' +
+      'Pending, running and paused transfers are kept, and nothing that was transferred is affected.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  clearStorageTargetTransfers(@Param() { id }: UUIDParamDto): Promise<StorageTransferCountResponseDto> {
+    return this.service.clearTransferHistory(id);
   }
 
   @Get(':id/transfers')

@@ -339,6 +339,8 @@ export interface INodeSyncAssetJob {
 
 export interface IStorageTransferJob {
   transferId: string;
+  /** The run that queued this job. Absent on jobs queued before runs existed. */
+  runId?: string;
 }
 
 export interface IStorageTransferAssetJob extends IStorageTransferJob {
@@ -533,6 +535,7 @@ export type JobItem =
   | { name: JobName.NodeSyncRetryFailed; data: INodeSyncPairJob }
   | { name: JobName.NodeSyncPullAsset; data: INodeSyncAssetJob }
   | { name: JobName.NodeSyncAlbums; data: INodeSyncPairJob }
+  | { name: JobName.NodeSyncMetadataQueue; data: INodeSyncPairJob }
 
   // Editor
   | { name: JobName.AssetEditThumbnailGeneration; data: IEntityJob };

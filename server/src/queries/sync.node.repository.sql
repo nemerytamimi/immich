@@ -69,15 +69,6 @@ where
   "nodeUserId" = $1
   and "localAssetId" = $2
 
--- SyncNodeRepository.getMappedRemoteIds
-select
-  "remoteAssetId"
-from
-  "sync_node_asset"
-where
-  "nodeUserId" = $1
-  and "remoteAssetId" in ($2)
-
 -- SyncNodeRepository.getMappingByRemoteId
 select
   "sync_node_asset".*

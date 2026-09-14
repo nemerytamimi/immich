@@ -12,7 +12,7 @@
     TableRow,
     Text,
   } from '@immich/ui';
-  import { mdiRestart } from '@mdi/js';
+  import { mdiRestart, mdiTrashCanOutline } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { t } from 'svelte-i18n';
 
@@ -22,9 +22,13 @@
     nodeName: string;
     /** Given only where retrying makes sense, which is the out-of-attempts table. */
     onRetry?: (item: SyncPairingItemDto) => void;
+    /** Given where an item can be dropped from the list by hand. */
+    onRemove?: (item: SyncPairingItemDto) => void;
   };
 
-  const { items, maxAttempts, nodeName, onRetry }: Props = $props();
+  const { items, maxAttempts, nodeName, onRetry, onRemove }: Props = $props();
+
+  const hasActions = $derived(!!onRetry || !!onRemove);
 
   const formatDate = (value: string) => DateTime.fromISO(value).setLocale($locale).toRelative();
 
@@ -40,8 +44,8 @@
     <TableHeading class="w-1/5 text-left">{$t('admin.sync_pairing_reason')}</TableHeading>
     <TableHeading class="w-1/5 text-left">{$t('admin.sync_pairing_attempts_heading')}</TableHeading>
     <TableHeading class="w-1/5 text-left">{$t('admin.sync_pairing_last_tried')}</TableHeading>
-    {#if onRetry}
-      <TableHeading class="w-16 text-right"></TableHeading>
+    {#if hasActions}
+      <TableHeading class="w-24 text-right"></TableHeading>
     {/if}
   </TableHeader>
 
@@ -75,17 +79,32 @@
           <Text size="tiny" color="secondary">{formatDate(item.updatedAt)}</Text>
         </TableCell>
 
-        {#if onRetry}
+        {#if hasActions}
           <TableCell class="px-4 text-right">
-            <IconButton
-              icon={mdiRestart}
-              aria-label={$t('admin.sync_pairing_retry')}
-              title={$t('admin.sync_pairing_retry')}
-              size="small"
-              variant="ghost"
-              color="primary"
-              onclick={() => onRetry(item)}
-            />
+            <div class="flex justify-end gap-1">
+              {#if onRetry}
+                <IconButton
+                  icon={mdiRestart}
+                  aria-label={$t('admin.sync_pairing_retry')}
+                  title={$t('admin.sync_pairing_retry')}
+                  size="small"
+                  variant="ghost"
+                  color="primary"
+                  onclick={() => onRetry(item)}
+                />
+              {/if}
+              {#if onRemove}
+                <IconButton
+                  icon={mdiTrashCanOutline}
+                  aria-label={$t('admin.sync_pairing_item_remove')}
+                  title={$t('admin.sync_pairing_item_remove')}
+                  size="small"
+                  variant="ghost"
+                  color="danger"
+                  onclick={() => onRemove(item)}
+                />
+              {/if}
+            </div>
           </TableCell>
         {/if}
       </TableRow>

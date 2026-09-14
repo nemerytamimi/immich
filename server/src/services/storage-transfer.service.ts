@@ -36,6 +36,9 @@ const REMOTE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** How often a queueing walk re-reads its transfer to notice a pause or cancel. */
 const QUEUE_STOP_CHECK_INTERVAL = 500;
 
+/** Long enough for a stack of provider detail, short enough that one row stays small. */
+const MAX_ERROR_LENGTH = 1000;
+
 /**
  * Every remote key prefix a user's objects can sit under.
  *
@@ -52,62 +55,46 @@ const getOwnerPrefixes = (user: { id: string; storageLabel: string | null }): st
   ...new Set([user.storageLabel || user.id, user.id]),
 ];
 
+/**
+ * Whether a job may act for its transfer: the transfer is neither paused nor
+ * cancelled, and is still on the run that queued the job.
+ *
+ * A paused or cancelled transfer leaves its queued jobs in place, and they drain
+ * without acting and without touching the counters. Resuming starts a new run,
+ * so those same jobs keep draining afterwards instead of waking up and counting
+ * toward a run that re-queues their assets anyway. A job queued before runs
+ * existed carries none, and matches only a transfer that has none either.
+ */
+const isCurrentRun = (transfer: { status: StorageTransferStatus; runId: string | null }, runId?: string) =>
+  !STORAGE_TRANSFER_STOPPED.has(transfer.status) && transfer.runId === (runId ?? null);
+
+/** bigint columns come back from the driver as strings. */
+const asSize = (value: string | number | null | undefined) =>
+  value === null || value === undefined ? null : Number(value);
+
+type TransferWalk = { ownerId: string; scope: StorageTransferScope };
+
+/** What is known about an item, kept with its failure so it can be looked at and retried. */
+type TransferItemRef = {
+  assetId?: string;
+  remoteKey?: string;
+  fileName?: string | null;
+  size?: number | null;
+};
+
 @Injectable()
 export class StorageTransferService extends BaseService {
   @OnJob({ name: JobName.StorageTargetExportQueue, queue: QueueName.StorageTarget })
-  async handleExportQueue({ transferId }: IStorageTransferJob): Promise<JobStatus> {
-    const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    if (!transfer) {
-      this.logger.warn(`Transfer ${transferId} no longer exists, skipping`);
-      return JobStatus.Skipped;
-    }
-
-    if (STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
-      this.logger.debug(`Transfer ${transferId} is ${transfer.status}, not queueing work`);
-      return JobStatus.Skipped;
-    }
-
-    await this.storageTargetRepository.updateTransfer(transferId, {
-      status: StorageTransferStatus.Running,
-      startedAt: new Date(),
-    });
-
-    const assets = this.storageTargetRepository.streamAssetsForExport(transfer.ownerId, transfer.scope);
-
-    let total = 0;
-    for await (const { id } of assets) {
-      await this.jobRepository.queue({
-        name: JobName.StorageTargetExportAsset,
-        data: { transferId, assetId: id },
-      });
-      total++;
-    }
-
-    this.logger.log(`Queued ${total} asset(s) for export to storage target ${transfer.targetId}`);
-
-    // The total is only known after the stream is drained, so it is written last.
-    // Workers that finished early are reconciled by the closing check below.
-    await this.storageTargetRepository.updateTransfer(transferId, { totalCount: total });
-
-    if (total === 0) {
-      await this.storageTargetRepository.updateTransfer(transferId, {
-        status: StorageTransferStatus.Completed,
-        finishedAt: new Date(),
-      });
-    } else {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, {});
-    }
-
-    return JobStatus.Success;
+  handleExportQueue({ transferId }: IStorageTransferJob): Promise<JobStatus> {
+    return this.queueAssetTransfer(transferId, JobName.StorageTargetExportAsset, (transfer) =>
+      this.storageTargetRepository.streamAssetsForExport(transfer.ownerId, transfer.scope),
+    );
   }
 
   @OnJob({ name: JobName.StorageTargetExportAsset, queue: QueueName.StorageTarget })
-  async handleExportAsset({ transferId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
+  async handleExportAsset({ transferId, runId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    // A paused or cancelled transfer leaves its queued jobs in place; they drain
-    // without acting and without touching the counters, so a resume re-queues
-    // from a clean slate rather than racing whatever was still in flight.
-    if (!transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
+    if (!transfer || !isCurrentRun(transfer, runId)) {
       return JobStatus.Skipped;
     }
 
@@ -119,7 +106,7 @@ export class StorageTransferService extends BaseService {
 
     const asset = await this.storageTargetRepository.getAssetForExport(assetId);
     if (!asset) {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { failed: 1 });
+      await this.fail(transferId, runId, { assetId }, 'The asset no longer exists');
       return JobStatus.Skipped;
     }
 
@@ -127,21 +114,22 @@ export class StorageTransferService extends BaseService {
     // makes re-running an export cheap.
     const existing = await this.storageTargetRepository.getObjectByAsset(target.id, assetId);
     if (existing) {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { completed: 1 });
+      await this.succeed(transferId, runId, assetId);
       return JobStatus.Skipped;
     }
 
     const remoteKey = this.getRemoteKey(asset.ownerId, asset.originalPath);
+    const item = { assetId, remoteKey, fileName: asset.originalFileName, size: asSize(asset.fileSizeInByte) };
 
     try {
       await this.uploadOriginal(target, asset, remoteKey);
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { completed: 1 });
+      await this.succeed(transferId, runId, assetId);
       return JobStatus.Success;
     } catch (error: any) {
       // One bad object must not abort the whole transfer, so failures are counted
       // and the run continues.
       this.logger.error(`Failed to export asset ${assetId} to ${remoteKey}: ${error}`, error?.stack);
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { failed: 1 });
+      await this.fail(transferId, runId, item, error);
       return JobStatus.Failed;
     }
   }
@@ -165,10 +153,18 @@ export class StorageTransferService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    await this.storageTargetRepository.updateTransfer(transferId, {
+    const { runId } = transfer;
+    // Imported keys are in the ledger, so a resumed scan leaves them out: what the
+    // earlier run finished stays counted and the scan adds only what is left.
+    const baseline = transfer.completedCount;
+
+    const started = await this.storageTargetRepository.updateTransferRun(transferId, runId, {
       status: StorageTransferStatus.Running,
       startedAt: new Date(),
     });
+    if (!started) {
+      return JobStatus.Skipped;
+    }
 
     // Objects on a target are laid out per user, so a scan that walked the whole
     // target would hand one user every other user's originals. Scanning only the
@@ -181,7 +177,7 @@ export class StorageTransferService extends BaseService {
 
     const prefixes = transfer.prefix === null ? getOwnerPrefixes(owner) : [transfer.prefix];
 
-    let total = 0;
+    let queued = 0;
 
     try {
       for await (const batch of this.listPrefixes(target, prefixes)) {
@@ -202,15 +198,15 @@ export class StorageTransferService extends BaseService {
         for (const object of newObjects) {
           await this.jobRepository.queue({
             name: JobName.StorageTargetImportObject,
-            data: { transferId, remoteKey: object.key, size: object.size },
+            data: { transferId, runId: runId ?? undefined, remoteKey: object.key, size: object.size },
           });
-          total++;
+          queued++;
         }
       }
     } catch (error: any) {
       const detail = describeRemoteError(error);
       this.logger.error(`Failed to scan storage target "${target.name}" (${target.id}): ${detail}`, error?.stack);
-      await this.storageTargetRepository.updateTransfer(transferId, {
+      await this.storageTargetRepository.updateTransferRun(transferId, runId, {
         status: StorageTransferStatus.Failed,
         finishedAt: new Date(),
         error: detail,
@@ -218,29 +214,15 @@ export class StorageTransferService extends BaseService {
       return JobStatus.Failed;
     }
 
-    this.logger.log(`Queued ${total} object(s) for import from storage target ${target.id}`);
+    this.logger.log(`Queued ${queued} object(s) for import from storage target ${target.id}`);
 
-    await this.storageTargetRepository.updateTransfer(transferId, { totalCount: total });
-
-    if (total === 0) {
-      await this.storageTargetRepository.updateTransfer(transferId, {
-        status: StorageTransferStatus.Completed,
-        finishedAt: new Date(),
-      });
-    } else {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, {});
-    }
-
-    return JobStatus.Success;
+    return this.finishWalk(transferId, runId, baseline, queued);
   }
 
   @OnJob({ name: JobName.StorageTargetImportObject, queue: QueueName.StorageTarget })
-  async handleImportObject({ transferId, remoteKey, size }: IStorageTransferObjectJob): Promise<JobStatus> {
+  async handleImportObject({ transferId, runId, remoteKey, size }: IStorageTransferObjectJob): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    // A paused or cancelled transfer leaves its queued jobs in place; they drain
-    // without acting and without touching the counters, so a resume re-queues
-    // from a clean slate rather than racing whatever was still in flight.
-    if (!transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
+    if (!transfer || !isCurrentRun(transfer, runId)) {
       return JobStatus.Skipped;
     }
 
@@ -252,6 +234,7 @@ export class StorageTransferService extends BaseService {
     const ownerId = transfer.ownerId;
     const uuid = randomUUID();
     const originalName = basename(remoteKey);
+    const item = { remoteKey, fileName: originalName, size };
     const localPath = join(
       StorageCore.getNestedFolder(StorageFolder.Upload, ownerId, uuid),
       `${uuid}${getFilenameExtension(originalName)}`,
@@ -283,7 +266,7 @@ export class StorageTransferService extends BaseService {
           size,
           checksum,
         });
-        await this.storageTargetRepository.incrementTransferProgress(transferId, { completed: 1 });
+        await this.succeed(transferId, runId, remoteKey);
         return JobStatus.Skipped;
       }
 
@@ -326,12 +309,12 @@ export class StorageTransferService extends BaseService {
         data: { id: asset.id, source: 'upload' },
       });
 
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { completed: 1 });
+      await this.succeed(transferId, runId, remoteKey);
       return JobStatus.Success;
     } catch (error: any) {
       this.logger.error(`Failed to import ${remoteKey}: ${error}`, error?.stack);
       await this.jobRepository.queue({ name: JobName.FileDelete, data: { files: [localPath] } });
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { failed: 1 });
+      await this.fail(transferId, runId, item, error);
       return JobStatus.Failed;
     }
   }
@@ -366,8 +349,11 @@ export class StorageTransferService extends BaseService {
 
   @OnJob({ name: JobName.StorageTargetOffloadQueue, queue: QueueName.StorageTarget })
   handleOffloadQueue({ transferId }: IStorageTransferJob): Promise<JobStatus> {
-    return this.queueAssetTransfer(transferId, JobName.StorageTargetOffloadAsset, (transfer) =>
-      this.storageTargetRepository.streamAssetsForOffload(transfer.ownerId, transfer.scope),
+    return this.queueAssetTransfer(
+      transferId,
+      JobName.StorageTargetOffloadAsset,
+      (transfer) => this.storageTargetRepository.streamAssetsForOffload(transfer.ownerId, transfer.scope),
+      (transfer) => this.storageTargetRepository.countAssetsMissingPreviews(transfer.ownerId, transfer.scope),
     );
   }
 
@@ -384,12 +370,9 @@ export class StorageTransferService extends BaseService {
    * the difference between a cheap re-run and deleting the last copy of a photo.
    */
   @OnJob({ name: JobName.StorageTargetOffloadAsset, queue: QueueName.StorageTarget })
-  async handleOffloadAsset({ transferId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
+  async handleOffloadAsset({ transferId, runId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    // A paused or cancelled transfer leaves its queued jobs in place; they drain
-    // without acting and without touching the counters, so a resume re-queues
-    // from a clean slate rather than racing whatever was still in flight.
-    if (!transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
+    if (!transfer || !isCurrentRun(transfer, runId)) {
       return JobStatus.Skipped;
     }
 
@@ -401,17 +384,18 @@ export class StorageTransferService extends BaseService {
 
     const asset = await this.storageTargetRepository.getAssetForExport(assetId);
     if (!asset) {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { failed: 1 });
+      await this.fail(transferId, runId, { assetId }, 'The asset no longer exists');
       return JobStatus.Skipped;
     }
 
     if (asset.offloadedAt) {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { completed: 1 });
+      await this.succeed(transferId, runId, assetId);
       return JobStatus.Skipped;
     }
 
     const existing = await this.storageTargetRepository.getObjectByAsset(target.id, assetId);
     const remoteKey = existing?.remoteKey ?? this.getRemoteKey(asset.ownerId, asset.originalPath);
+    const item = { assetId, remoteKey, fileName: asset.originalFileName, size: asSize(asset.fileSizeInByte) };
 
     try {
       const { size: localSize } = await this.storageRepository.stat(asset.originalPath);
@@ -440,11 +424,11 @@ export class StorageTransferService extends BaseService {
       await this.storageTargetRepository.setOffloadedAt(assetId, new Date());
 
       this.logger.debug(`Offloaded asset ${assetId} to ${remoteKey}, freed ${localSize} bytes`);
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { completed: 1 });
+      await this.succeed(transferId, runId, assetId);
       return JobStatus.Success;
     } catch (error: any) {
       this.logger.error(`Failed to offload asset ${assetId} to ${remoteKey}: ${error}`, error?.stack);
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { failed: 1 });
+      await this.fail(transferId, runId, item, error);
       return JobStatus.Failed;
     }
   }
@@ -462,34 +446,42 @@ export class StorageTransferService extends BaseService {
    * album membership survive a full offload/restore round trip untouched.
    */
   @OnJob({ name: JobName.StorageTargetRestoreAsset, queue: QueueName.StorageTarget })
-  async handleRestoreAsset({ transferId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
+  async handleRestoreAsset({ transferId, runId, assetId }: IStorageTransferAssetJob): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    // A paused or cancelled transfer leaves its queued jobs in place; they drain
-    // without acting and without touching the counters, so a resume re-queues
-    // from a clean slate rather than racing whatever was still in flight.
-    if (!transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
+    if (!transfer || !isCurrentRun(transfer, runId)) {
       return JobStatus.Skipped;
     }
 
     const asset = await this.storageTargetRepository.getAssetForExport(assetId);
     if (!asset) {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { failed: 1 });
+      await this.fail(transferId, runId, { assetId }, 'The asset no longer exists');
       return JobStatus.Skipped;
     }
 
     if (!asset.offloadedAt) {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { completed: 1 });
+      await this.succeed(transferId, runId, assetId);
       return JobStatus.Skipped;
     }
 
     const location = await this.storageTargetRepository.getOffloadLocation(assetId);
     if (!location) {
       this.logger.error(`Asset ${assetId} is offloaded but no enabled target holds it`);
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { failed: 1 });
+      await this.fail(
+        transferId,
+        runId,
+        { assetId, fileName: asset.originalFileName, size: asSize(asset.fileSizeInByte) },
+        'The asset is offloaded, but no enabled storage target holds it',
+      );
       return JobStatus.Failed;
     }
 
     const partialPath = `${asset.originalPath}.restore`;
+    const item = {
+      assetId,
+      remoteKey: location.remoteKey,
+      fileName: asset.originalFileName,
+      size: asSize(location.size),
+    };
 
     try {
       this.storageRepository.mkdirSync(dirname(asset.originalPath));
@@ -515,12 +507,12 @@ export class StorageTransferService extends BaseService {
       await this.storageRepository.unlink(getRemoteCachePath(asset)).catch(() => {});
 
       this.logger.debug(`Restored asset ${assetId} from ${location.remoteKey}`);
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { completed: 1 });
+      await this.succeed(transferId, runId, assetId);
       return JobStatus.Success;
     } catch (error: any) {
       this.logger.error(`Failed to restore asset ${assetId}: ${error}`, error?.stack);
       await this.storageRepository.unlink(partialPath).catch(() => {});
-      await this.storageTargetRepository.incrementTransferProgress(transferId, { failed: 1 });
+      await this.fail(transferId, runId, item, error);
       return JobStatus.Failed;
     }
   }
@@ -585,15 +577,47 @@ export class StorageTransferService extends BaseService {
     return JobStatus.Success;
   }
 
+  /** Count an item as done, and forget any failure it left on an earlier attempt. */
+  private async succeed(transferId: string, runId: string | undefined, itemKey: string) {
+    await this.storageTargetRepository.clearTransferFailure(transferId, itemKey);
+    await this.storageTargetRepository.incrementTransferProgress(transferId, runId, { completed: 1 });
+  }
+
   /**
-   * Shared queueing shell for the asset-by-asset directions. The total is only
-   * known once the stream is drained, so it is written last and the counters are
-   * reconciled after, exactly as the export queue does.
+   * Count an item as failed, and keep what went wrong with it. The counter says
+   * how many failed; this is what says which ones, and why.
+   */
+  private async fail(transferId: string, runId: string | undefined, item: TransferItemRef, error: unknown) {
+    const message = typeof error === 'string' ? error : describeRemoteError(error);
+
+    await this.storageTargetRepository.recordTransferFailure({
+      transferId,
+      itemKey: item.assetId ?? item.remoteKey ?? '',
+      assetId: item.assetId ?? null,
+      remoteKey: item.remoteKey ?? null,
+      fileName: item.fileName ?? null,
+      size: item.size ?? null,
+      error: message.slice(0, MAX_ERROR_LENGTH),
+    });
+    await this.storageTargetRepository.incrementTransferProgress(transferId, runId, { failed: 1 });
+  }
+
+  /**
+   * Shared queueing shell for the asset-by-asset directions.
+   *
+   * Offload and restore leave finished assets out of their walk, so on a resumed
+   * run the total is what the earlier run already completed plus what the walk
+   * queues now. Export walks everything and counts what the ledger holds as it
+   * goes, which is why resuming one clears its count before this runs.
+   *
+   * `countSkipped` reports assets the walk leaves out because they are not ready
+   * yet. They are not in the total, so it is recorded separately.
    */
   private async queueAssetTransfer(
     transferId: string,
-    jobName: JobName.StorageTargetOffloadAsset | JobName.StorageTargetRestoreAsset,
-    stream: (transfer: { ownerId: string; scope: StorageTransferScope }) => AsyncIterable<{ id: string }>,
+    jobName: JobName.StorageTargetExportAsset | JobName.StorageTargetOffloadAsset | JobName.StorageTargetRestoreAsset,
+    stream: (transfer: TransferWalk) => AsyncIterable<{ id: string }>,
+    countSkipped?: (transfer: TransferWalk) => Promise<number>,
   ): Promise<JobStatus> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
     if (!transfer) {
@@ -606,45 +630,81 @@ export class StorageTransferService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    await this.storageTargetRepository.updateTransfer(transferId, {
+    const { runId } = transfer;
+    const baseline = transfer.completedCount;
+    const skippedCount = countSkipped ? await countSkipped(transfer) : 0;
+
+    const started = await this.storageTargetRepository.updateTransferRun(transferId, runId, {
       status: StorageTransferStatus.Running,
       startedAt: new Date(),
+      skippedCount,
     });
+    if (!started) {
+      return JobStatus.Skipped;
+    }
 
-    let total = 0;
+    let queued = 0;
     for await (const { id } of stream(transfer)) {
-      await this.jobRepository.queue({ name: jobName, data: { transferId, assetId: id } });
-      total++;
+      await this.jobRepository.queue({ name: jobName, data: { transferId, runId: runId ?? undefined, assetId: id } });
+      queued++;
 
       // Enumerating a large library takes a while, and an operator who pauses
       // during it expects the queueing to stop too, not to finish first.
-      if (total % QUEUE_STOP_CHECK_INTERVAL === 0 && (await this.isStopped(transferId))) {
-        this.logger.log(`Transfer ${transferId} stopped after queueing ${total} asset(s)`);
-        await this.storageTargetRepository.updateTransfer(transferId, { totalCount: total });
+      if (queued % QUEUE_STOP_CHECK_INTERVAL === 0 && (await this.isStopped(transferId, runId))) {
+        this.logger.log(`Transfer ${transferId} stopped after queueing ${queued} asset(s)`);
+        await this.storageTargetRepository.updateTransferRun(transferId, runId, { totalCount: baseline + queued });
         return JobStatus.Skipped;
       }
     }
 
-    this.logger.log(`Queued ${total} asset(s) for ${transfer.direction} on storage target ${transfer.targetId}`);
+    this.logger.log(
+      `Queued ${queued} asset(s) for ${transfer.direction} on storage target ${transfer.targetId}` +
+        (skippedCount > 0 ? `, skipped ${skippedCount} with no thumbnail or preview yet` : ''),
+    );
 
-    await this.storageTargetRepository.updateTransfer(transferId, { totalCount: total });
+    return this.finishWalk(transferId, runId, baseline, queued);
+  }
 
-    if (total === 0) {
-      await this.storageTargetRepository.updateTransfer(transferId, {
-        status: StorageTransferStatus.Completed,
-        finishedAt: new Date(),
-      });
+  /**
+   * Record a walk's total and close the transfer when it queued nothing. The
+   * total is only known once the walk is drained, so it is written last and the
+   * counters are reconciled after, in case workers finished before it landed.
+   */
+  private async finishWalk(
+    transferId: string,
+    runId: string | null,
+    baseline: number,
+    queued: number,
+  ): Promise<JobStatus> {
+    const updated = await this.storageTargetRepository.updateTransferRun(transferId, runId, {
+      totalCount: baseline + queued,
+    });
+
+    // Paused and resumed while this walk was still going: the new run walks
+    // again, so this one's total describes nothing.
+    if (!updated) {
+      return JobStatus.Skipped;
+    }
+
+    if (queued === 0) {
+      // A walk that finished after a pause landed leaves it paused.
+      if (updated.status === StorageTransferStatus.Running) {
+        await this.storageTargetRepository.updateTransferRun(transferId, runId, {
+          status: StorageTransferStatus.Completed,
+          finishedAt: new Date(),
+        });
+      }
     } else {
-      await this.storageTargetRepository.incrementTransferProgress(transferId, {});
+      await this.storageTargetRepository.incrementTransferProgress(transferId, runId, {});
     }
 
     return JobStatus.Success;
   }
 
-  /** Whether the transfer has been paused or cancelled since the job started. */
-  private async isStopped(transferId: string): Promise<boolean> {
+  /** Whether the transfer has been paused, cancelled, or moved to a new run since the walk started. */
+  private async isStopped(transferId: string, runId: string | null): Promise<boolean> {
     const transfer = await this.storageTargetRepository.getTransfer(transferId);
-    return !transfer || STORAGE_TRANSFER_STOPPED.has(transfer.status);
+    return !transfer || !isCurrentRun(transfer, runId ?? undefined);
   }
 
   /** Upload an original and its sidecar, and record both in the ledger. */

@@ -140,6 +140,10 @@ const SyncPairingRetrySchema = z
 const SyncPairingCancelSchema = z
   .object({
     direction: SyncDirectionSchema.optional().describe('Limit to one direction. Omit to discard both.'),
+    itemIds: z
+      .array(z.uuidv4())
+      .optional()
+      .describe('Remove only these ledger entries, such as items that need attention. Omit to discard everything.'),
   })
   .meta({ id: 'SyncPairingCancelDto' });
 

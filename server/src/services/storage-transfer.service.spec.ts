@@ -43,6 +43,8 @@ const transferStub = {
   finishedAt: null,
   error: null,
   prefix: null,
+  runId: null as string | null,
+  skippedCount: 0,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
   updateId: 'update-1',
@@ -144,6 +146,7 @@ describe(StorageTransferService.name, () => {
     mocks.storageTarget.getTransfer.mockResolvedValue(transferStub);
     mocks.storageTarget.get.mockResolvedValue(targetStub);
     mocks.storageTarget.updateTransfer.mockResolvedValue(transferStub);
+    mocks.storageTarget.updateTransferRun.mockResolvedValue(transferStub);
     mocks.storageTarget.incrementTransferProgress.mockResolvedValue(transferStub);
     mocks.storageTarget.upsertObject.mockResolvedValue(objectStub);
     mocks.storage.unlink.mockResolvedValue(void 0);
@@ -170,7 +173,7 @@ describe(StorageTransferService.name, () => {
       await expect(sut.handleExportQueue({ transferId: 'transfer-1' })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.job.queue).toHaveBeenCalledTimes(2);
-      expect(mocks.storageTarget.updateTransfer).toHaveBeenCalledWith('transfer-1', { totalCount: 2 });
+      expect(mocks.storageTarget.updateTransferRun).toHaveBeenCalledWith('transfer-1', null, { totalCount: 2 });
     });
 
     it('should complete immediately when there is nothing to export', async () => {
@@ -179,8 +182,9 @@ describe(StorageTransferService.name, () => {
       await expect(sut.handleExportQueue({ transferId: 'transfer-1' })).resolves.toBe(JobStatus.Success);
 
       expect(mocks.job.queue).not.toHaveBeenCalled();
-      expect(mocks.storageTarget.updateTransfer).toHaveBeenCalledWith(
+      expect(mocks.storageTarget.updateTransferRun).toHaveBeenCalledWith(
         'transfer-1',
+        null,
         expect.objectContaining({ status: StorageTransferStatus.Completed }),
       );
     });
@@ -196,7 +200,9 @@ describe(StorageTransferService.name, () => {
       );
 
       expect(mocks.remoteStorage.upload).not.toHaveBeenCalled();
-      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { completed: 1 });
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', undefined, {
+        completed: 1,
+      });
     });
 
     it('should upload the original under a key mirroring the library layout', async () => {
@@ -217,7 +223,9 @@ describe(StorageTransferService.name, () => {
         expect.anything(),
         expect.objectContaining({ size: 1024 }),
       );
-      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { completed: 1 });
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', undefined, {
+        completed: 1,
+      });
     });
 
     it('should also upload the sidecar when one exists', async () => {
@@ -250,7 +258,9 @@ describe(StorageTransferService.name, () => {
         JobStatus.Failed,
       );
 
-      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { failed: 1 });
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', undefined, {
+        failed: 1,
+      });
       expect(mocks.storageTarget.upsertObject).not.toHaveBeenCalled();
     });
 
@@ -325,7 +335,9 @@ describe(StorageTransferService.name, () => {
       );
 
       expect(mocks.storage.unlink).not.toHaveBeenCalledWith(assetStub.originalPath);
-      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { failed: 1 });
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', undefined, {
+        failed: 1,
+      });
     });
 
     it('should skip an asset that is already offloaded', async () => {
@@ -396,6 +408,128 @@ describe(StorageTransferService.name, () => {
     });
   });
 
+  describe('runs', () => {
+    it('should leave a job from a replaced run alone even though the transfer is running again', async () => {
+      // Resuming starts a new run. A job queued before the pause still carries the
+      // old one and must keep draining, not act for a run that re-queued its asset.
+      setupOffload(mocks);
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, runId: 'run-2' });
+
+      await expect(
+        sut.handleOffloadAsset({ transferId: 'transfer-1', runId: 'run-1', assetId: 'asset-1' }),
+      ).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.storage.unlink).not.toHaveBeenCalledWith(assetStub.originalPath);
+      expect(mocks.storageTarget.incrementTransferProgress).not.toHaveBeenCalled();
+    });
+
+    it('should carry the run on every job it queues', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, runId: 'run-2' });
+      mocks.storageTarget.streamAssetsForRestore.mockReturnValue(asAsyncItems({ id: 'asset-1' }) as never);
+
+      await sut.handleRestoreQueue({ transferId: 'transfer-1' });
+
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: 'StorageTargetRestoreAsset',
+        data: { transferId: 'transfer-1', runId: 'run-2', assetId: 'asset-1' },
+      });
+    });
+
+    it('should count what the stopped run completed toward the resumed total', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, runId: 'run-2', completedCount: 4 });
+      mocks.storageTarget.streamAssetsForRestore.mockReturnValue(
+        asAsyncItems({ id: 'asset-1' }, { id: 'asset-2' }) as never,
+      );
+
+      await sut.handleRestoreQueue({ transferId: 'transfer-1' });
+
+      expect(mocks.storageTarget.updateTransferRun).toHaveBeenCalledWith('transfer-1', 'run-2', { totalCount: 6 });
+    });
+
+    it('should not close a transfer once a pause and resume have overtaken the walk', async () => {
+      mocks.storageTarget.streamAssetsForRestore.mockReturnValue(asAsyncItems() as never);
+      // Marking it running lands; by the time the walk has drained, the run has moved on.
+      mocks.storageTarget.updateTransferRun.mockResolvedValueOnce(transferStub).mockResolvedValueOnce(void 0);
+
+      await expect(sut.handleRestoreQueue({ transferId: 'transfer-1' })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.storageTarget.updateTransferRun).not.toHaveBeenCalledWith(
+        'transfer-1',
+        null,
+        expect.objectContaining({ status: StorageTransferStatus.Completed }),
+      );
+    });
+
+    it('should record offload candidates skipped for having no thumbnail or preview', async () => {
+      mocks.storageTarget.countAssetsMissingPreviews.mockResolvedValue(3);
+      mocks.storageTarget.streamAssetsForOffload.mockReturnValue(asAsyncItems() as never);
+
+      await sut.handleOffloadQueue({ transferId: 'transfer-1' });
+
+      expect(mocks.storageTarget.updateTransferRun).toHaveBeenCalledWith(
+        'transfer-1',
+        null,
+        expect.objectContaining({ status: StorageTransferStatus.Running, skippedCount: 3 }),
+      );
+    });
+  });
+
+  describe('failures', () => {
+    it('should record which file failed and why', async () => {
+      setupOffload(mocks);
+      mocks.storageTarget.getObjectByAsset.mockResolvedValue(void 0);
+      mocks.remoteStorage.upload.mockRejectedValue(new Error('Access Denied'));
+
+      await expect(sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Failed,
+      );
+
+      expect(mocks.storageTarget.recordTransferFailure).toHaveBeenCalledWith({
+        transferId: 'transfer-1',
+        itemKey: 'asset-1',
+        assetId: 'asset-1',
+        remoteKey: 'user-1/2026/2026-01-01/IMG_0001.jpg',
+        fileName: 'IMG_0001.jpg',
+        size: 1024,
+        error: expect.stringContaining('Access Denied'),
+      });
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', undefined, {
+        failed: 1,
+      });
+    });
+
+    it('should forget an earlier failure once the item goes through', async () => {
+      setupOffload(mocks);
+      mocks.storageTarget.getObjectByAsset.mockResolvedValue(void 0);
+
+      await expect(sut.handleOffloadAsset({ transferId: 'transfer-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.storageTarget.clearTransferFailure).toHaveBeenCalledWith('transfer-1', 'asset-1');
+      expect(mocks.storageTarget.recordTransferFailure).not.toHaveBeenCalled();
+    });
+
+    it('should record an import failure by its remote key', async () => {
+      mocks.storage.mkdirSync.mockReturnValue(void 0);
+      mocks.remoteStorage.createReadStream.mockRejectedValue(new Error('NoSuchKey'));
+
+      await expect(
+        sut.handleImportObject({ transferId: 'transfer-1', remoteKey: 'user-1/IMG_0002.jpg', size: 2048 }),
+      ).resolves.toBe(JobStatus.Failed);
+
+      expect(mocks.storageTarget.recordTransferFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          itemKey: 'user-1/IMG_0002.jpg',
+          assetId: null,
+          remoteKey: 'user-1/IMG_0002.jpg',
+          fileName: 'IMG_0002.jpg',
+          size: 2048,
+        }),
+      );
+    });
+  });
+
   describe('handleRestoreAsset', () => {
     const offloaded = { ...assetStub, offloadedAt: new Date('2026-01-02') };
 
@@ -435,7 +569,9 @@ describe(StorageTransferService.name, () => {
         JobStatus.Failed,
       );
 
-      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { failed: 1 });
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', undefined, {
+        failed: 1,
+      });
     });
   });
 
@@ -530,8 +666,9 @@ describe(StorageTransferService.name, () => {
 
       await expect(sut.handleImportScan({ transferId: 'transfer-1' })).resolves.toBe(JobStatus.Failed);
 
-      expect(mocks.storageTarget.updateTransfer).toHaveBeenCalledWith(
+      expect(mocks.storageTarget.updateTransferRun).toHaveBeenCalledWith(
         'transfer-1',
+        null,
         expect.objectContaining({ status: StorageTransferStatus.Failed, error: 'Connection refused' }),
       );
     });
@@ -550,7 +687,9 @@ describe(StorageTransferService.name, () => {
       expect(mocks.storageTarget.upsertObject).toHaveBeenCalledWith(
         expect.objectContaining({ assetId: 'existing-asset', remoteKey: 'a/IMG_0001.jpg' }),
       );
-      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { completed: 1 });
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', undefined, {
+        completed: 1,
+      });
     });
 
     it('should create an asset and queue metadata extraction', async () => {
@@ -583,7 +722,9 @@ describe(StorageTransferService.name, () => {
       ).resolves.toBe(JobStatus.Failed);
 
       expect(mocks.job.queue).toHaveBeenCalledWith(expect.objectContaining({ name: 'FileDelete' }));
-      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', { failed: 1 });
+      expect(mocks.storageTarget.incrementTransferProgress).toHaveBeenCalledWith('transfer-1', undefined, {
+        failed: 1,
+      });
     });
   });
 });

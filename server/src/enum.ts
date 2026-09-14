@@ -1073,6 +1073,7 @@ export enum JobName {
   NodeSyncRetryFailed = 'NodeSyncRetryFailed',
   NodeSyncPullAsset = 'NodeSyncPullAsset',
   NodeSyncAlbums = 'NodeSyncAlbums',
+  NodeSyncMetadataQueue = 'NodeSyncMetadataQueue',
 }
 
 export const JobNameSchema = z.enum(JobName).describe('Job name').meta({ id: 'JobName' });
