@@ -445,6 +445,10 @@ export class SyncNodeRepository {
       .select([
         'asset.id',
         'asset.ownerId',
+        'asset.originalPath',
+        'asset.originalFileName',
+        'asset.checksum',
+        'asset.offloadedAt',
         'asset.isFavorite',
         'asset.visibility',
         'asset.fileCreatedAt',

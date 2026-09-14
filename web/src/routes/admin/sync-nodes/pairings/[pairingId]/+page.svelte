@@ -10,6 +10,7 @@
   import {
     getSyncPairingActions,
     handleRemoveStuckItem,
+    handleUpdatePairing,
     handleRetryStuckItem,
     handleRetryStuckItems,
   } from '$lib/services/sync-node.service';
@@ -32,9 +33,12 @@
     CardHeader,
     CardTitle,
     Container,
+    Field,
     Heading,
     ProgressBar,
+    Switch,
     Text,
+    toastManager,
   } from '@immich/ui';
   import { mdiRestart } from '@mdi/js';
   import { DateTime } from 'luxon';
@@ -96,6 +100,18 @@
 
   const retryOne = async (item: SyncPairingItemDto) => {
     if (await handleRetryStuckItem(pairing, item)) {
+      await refresh();
+    }
+  };
+
+  let forceSyncOffloaded = $state(data.pairing.forceSyncOffloaded);
+
+  const saveForceSyncOffloaded = async () => {
+    const updated = await handleUpdatePairing(pairing, { forceSyncOffloaded });
+    if (updated) {
+      if (updated.forceSyncOffloaded) {
+        toastManager.info($t('admin.sync_pairing_force_offloaded_restoring'));
+      }
       await refresh();
     }
   };
@@ -218,6 +234,31 @@
             <Text size="tiny" color="secondary">
               {$t('admin.sync_pairing_last_synced', { values: { date: lastSynced } })}
             </Text>
+          </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{$t('admin.sync_pairing_offloaded_files')}</CardTitle>
+        </CardHeader>
+
+        <CardBody>
+          <div class="flex flex-col gap-3">
+            <!-- Restoring writes to this server, so it only means anything while pulling. -->
+            <Field
+              label={$t('admin.sync_pairing_force_offloaded')}
+              description={$t('admin.sync_pairing_force_offloaded_description')}
+              disabled={!pairing.pullEnabled}
+            >
+              <Switch bind:checked={forceSyncOffloaded} />
+            </Field>
+
+            {#if forceSyncOffloaded !== pairing.forceSyncOffloaded}
+              <div class="flex justify-end">
+                <Button size="small" shape="round" onclick={() => void saveForceSyncOffloaded()}>{$t('save')}</Button>
+              </div>
+            {/if}
           </div>
         </CardBody>
       </Card>

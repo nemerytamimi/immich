@@ -74,6 +74,12 @@ const SyncPairingCreateSchema = z
       ),
     pushEnabled: z.boolean().default(true).describe("Send this user's assets to the peer"),
     pullEnabled: z.boolean().default(true).describe("Bring the paired user's assets here"),
+    forceSyncOffloaded: z
+      .boolean()
+      .default(false)
+      .describe(
+        'Download the original of a photo this node has offloaded to a storage target when the peer holds the same photo, and mark it restored. When off, offloaded files are left where they are. Metadata is synced either way.',
+      ),
   })
   .meta({ id: 'SyncPairingCreateDto' });
 
@@ -83,6 +89,12 @@ const SyncPairingUpdateSchema = z
     remoteApiKey: z.string().min(1).optional().describe('Replacement API key for the paired user'),
     pushEnabled: z.boolean().optional().describe("Send this user's assets to the peer"),
     pullEnabled: z.boolean().optional().describe("Bring the paired user's assets here"),
+    forceSyncOffloaded: z
+      .boolean()
+      .optional()
+      .describe(
+        'Download the original of a photo this node has offloaded to a storage target when the peer holds the same photo, and mark it restored. When off, offloaded files are left where they are. Metadata is synced either way.',
+      ),
   })
   .meta({ id: 'SyncPairingUpdateDto' });
 
@@ -95,6 +107,9 @@ const SyncPairingResponseSchema = z
     remoteUserEmail: z.string().describe('Paired user email on the peer'),
     pushEnabled: z.boolean().describe('Whether local assets are sent to the peer'),
     pullEnabled: z.boolean().describe('Whether remote assets are brought here'),
+    forceSyncOffloaded: z
+      .boolean()
+      .describe('Whether a pull restores the original of a photo this node has offloaded to a storage target'),
     lastSyncedAt: z.string().meta({ format: 'date-time' }).nullable().describe('Last successful sync'),
     pendingCount: z.int().describe('Items still to be transferred, including ones awaiting another attempt'),
     retryingCount: z.int().describe('Items that failed but are still being retried automatically'),
@@ -212,6 +227,7 @@ export function mapSyncPairing(
     remoteUserEmail: entity.remoteUserEmail,
     pushEnabled: entity.pushEnabled,
     pullEnabled: entity.pullEnabled,
+    forceSyncOffloaded: entity.forceSyncOffloaded,
     pendingCount: counts?.total ?? 0,
     retryingCount: counts?.retrying ?? 0,
     stuckCount: counts?.exhausted ?? 0,

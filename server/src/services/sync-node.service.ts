@@ -254,6 +254,7 @@ export class SyncNodeService extends BaseService {
       apiKey: dto.remoteApiKey,
       pushEnabled: dto.pushEnabled,
       pullEnabled: dto.pullEnabled,
+      forceSyncOffloaded: dto.forceSyncOffloaded,
     });
 
     return mapSyncPairing(pairing);
@@ -272,7 +273,16 @@ export class SyncNodeService extends BaseService {
       apiKey: dto.remoteApiKey ?? existing.apiKey,
       pushEnabled: dto.pushEnabled ?? existing.pushEnabled,
       pullEnabled: dto.pullEnabled ?? existing.pullEnabled,
+      forceSyncOffloaded: dto.forceSyncOffloaded ?? existing.forceSyncOffloaded,
     });
+
+    // A pull only revisits photos the peer changed, so turning this on would
+    // otherwise leave every offloaded photo already matched between the two
+    // untouched. A full pass over the matched photos is what restores those.
+    if (pairing.forceSyncOffloaded && !existing.forceSyncOffloaded) {
+      await this.syncNodeRepository.clearMetadataMarks(pairingId);
+      await this.jobRepository.queue({ name: JobName.NodeSyncMetadataQueue, data: { pairingId } });
+    }
 
     return mapSyncPairing(pairing);
   }

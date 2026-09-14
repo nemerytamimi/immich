@@ -29,6 +29,7 @@ const pairingStub = {
   apiKey: 'paired-user-key',
   pushEnabled: true,
   pullEnabled: true,
+  forceSyncOffloaded: false,
   pushCursor: null,
   pullCursor: null,
   lastSyncedAt: null,
@@ -506,6 +507,108 @@ describe(SyncEngineService.name, () => {
 
       expect(mocks.nodeClient.reassignFace).toHaveBeenCalledWith(expect.anything(), 'remote-omar', 'remote-face');
       expect(mocks.nodeClient.createPerson).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('offloaded originals', () => {
+    const offloadedStub = {
+      id: 'asset-1',
+      ownerId: 'user-1',
+      originalPath: '/data/library/user-1/IMG_0001.jpg',
+      originalFileName: 'IMG_0001.jpg',
+      checksum: Buffer.from('checksum'),
+      offloadedAt: new Date('2026-02-01'),
+      isFavorite: false,
+      visibility: AssetVisibility.Timeline,
+      fileCreatedAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
+      updateId: 'asset-update-1',
+      dateTimeOriginal: null,
+      timeZone: null,
+      latitude: null,
+      longitude: null,
+      rating: null,
+      description: '',
+      exifUpdatedAt: null,
+    };
+
+    beforeEach(() => {
+      mocks.syncNode.getMappingByRemoteId.mockResolvedValue(mappingStub);
+      mocks.syncNode.getAssetMetadata.mockResolvedValue(offloadedStub as never);
+      mocks.nodeClient.getRemoteAsset.mockResolvedValue({
+        id: 'remote-asset-1',
+        checksum: Buffer.from('checksum').toString('base64'),
+        originalFileName: 'IMG_0001.jpg',
+        fileCreatedAt: '2026-01-01T00:00:00.000Z',
+        fileModifiedAt: '2026-01-01T00:00:00.000Z',
+        isFavorite: false,
+        isArchived: false,
+        type: 'IMAGE',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      mocks.nodeClient.downloadAsset.mockResolvedValue(Readable.from(['bytes']));
+      mocks.storage.createWriteStream.mockImplementation(
+        () =>
+          new Writable({
+            write(_chunk, _encoding, callback) {
+              callback();
+            },
+          }),
+      );
+      mocks.storage.mkdirSync.mockReturnValue(void 0);
+      mocks.storage.rename.mockResolvedValue(void 0);
+      mocks.storage.unlink.mockResolvedValue(void 0);
+      mocks.crypto.hashFile.mockResolvedValue(Buffer.from('checksum'));
+    });
+
+    it('should leave an offloaded original where it is when not forced, and still compare metadata', async () => {
+      await expect(sut.handlePullAsset({ pairingId: 'pairing-1', assetId: 'remote-asset-1' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.nodeClient.downloadAsset).not.toHaveBeenCalled();
+      expect(mocks.storageTarget.setOffloadedAt).not.toHaveBeenCalled();
+      expect(mocks.nodeClient.getRemoteAsset).toHaveBeenCalledWith(expect.anything(), 'remote-asset-1');
+    });
+
+    it('should restore an offloaded original from the peer when forced', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue({ ...pairingStub, forceSyncOffloaded: true });
+
+      await expect(sut.handlePullAsset({ pairingId: 'pairing-1', assetId: 'remote-asset-1' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.storage.rename).toHaveBeenCalledWith(
+        '/data/library/user-1/IMG_0001.jpg.sync-restore',
+        '/data/library/user-1/IMG_0001.jpg',
+      );
+      expect(mocks.storageTarget.setOffloadedAt).toHaveBeenCalledWith('asset-1', null);
+    });
+
+    it('should not restore from a copy that does not match', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue({ ...pairingStub, forceSyncOffloaded: true });
+      mocks.crypto.hashFile.mockResolvedValue(Buffer.from('different'));
+
+      await expect(sut.handlePullAsset({ pairingId: 'pairing-1', assetId: 'remote-asset-1' })).resolves.toBe(
+        JobStatus.Failed,
+      );
+
+      expect(mocks.storage.rename).not.toHaveBeenCalled();
+      expect(mocks.storageTarget.setOffloadedAt).not.toHaveBeenCalled();
+    });
+
+    it('should match a photo already here by checksum without downloading it', async () => {
+      mocks.syncNode.getMappingByRemoteId.mockResolvedValue(void 0);
+      mocks.asset.getUploadAssetIdByChecksum.mockResolvedValue('asset-1');
+
+      await expect(sut.handlePullAsset({ pairingId: 'pairing-1', assetId: 'remote-asset-1' })).resolves.toBe(
+        JobStatus.Skipped,
+      );
+
+      expect(mocks.nodeClient.downloadAsset).not.toHaveBeenCalled();
+      expect(mocks.syncNode.upsertAssetMapping).toHaveBeenCalledWith(
+        expect.objectContaining({ localAssetId: 'asset-1', origin: 'pull-dedupe' }),
+      );
     });
   });
 

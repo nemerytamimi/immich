@@ -102,6 +102,17 @@ export class SyncNodeUserTable {
   pullEnabled!: Generated<boolean>;
 
   /**
+   * Whether a pull brings back the original of a photo this node has offloaded to
+   * a storage target, when the peer holds the same photo.
+   *
+   * Off by default: the file was offloaded to free local space, and quietly
+   * filling that space again on every sync would undo it. Metadata is reconciled
+   * either way, since it costs nothing to store.
+   */
+  @Column({ type: 'boolean', default: false })
+  forceSyncOffloaded!: Generated<boolean>;
+
+  /**
    * Watermark for local -> remote. Assets are ordered by the UUIDv7 `updateId`,
    * so this is a resumable cursor over everything that has changed locally.
    */
