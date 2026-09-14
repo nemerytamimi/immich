@@ -20,6 +20,7 @@ const empty: SyncedMetadata = {
   isFavorite: false,
   visibility: AssetVisibility.Timeline,
   tags: [],
+  originalFileName: 'IMG_0001.JPG',
 };
 
 const taken = new Date('2020-06-01T12:00:00.000Z');
@@ -138,6 +139,36 @@ describe('planMetadataSync', () => {
 
     expect(plan.local).toEqual({});
     expect(plan.remote).toEqual({});
+  });
+});
+
+describe('planMetadataSync capture date and name', () => {
+  it('should take the older capture date and real name from a copy with no EXIF date', () => {
+    // A re-imported copy: named by id, dated when it was imported.
+    const imported = {
+      ...empty,
+      createdAt: new Date('2026-09-14T05:13:26.000Z'),
+      originalFileName: 'ffc6c5db-54c6-440b-9be4-ceb170b5710f.JPG',
+    };
+    const original = { ...empty, createdAt: new Date('2026-01-17T07:58:56.000Z'), originalFileName: 'IMG_0738.JPG' };
+
+    const plan = planMetadataSync(imported, original);
+
+    expect(plan.winner).toBe('remote');
+    expect(plan.local).toEqual({
+      dateTimeOriginal: { value: new Date('2026-01-17T07:58:56.000Z'), timeZone: null },
+      originalFileName: 'IMG_0738.JPG',
+    });
+    expect(plan.remote).toEqual({});
+  });
+
+  it('should never give a real name up for a generated one', () => {
+    const plan = planMetadataSync(
+      { ...empty, originalFileName: 'IMG_0738.JPG' },
+      { ...empty, originalFileName: '888b97be-e255-4837-89a0-05565d1c6e80.JPG' },
+    );
+
+    expect(plan.local.originalFileName).toBeUndefined();
   });
 });
 
