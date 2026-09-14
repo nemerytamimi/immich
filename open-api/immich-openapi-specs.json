@@ -33906,6 +33906,11 @@
       },
       "SyncPairingCreateDto": {
         "properties": {
+          "forceSyncOffloaded": {
+            "default": false,
+            "description": "Download the original of a photo this node has offloaded to a storage target when the peer holds the same photo, and mark it restored. When off, offloaded files are left where they are. Metadata is synced either way.",
+            "type": "boolean"
+          },
           "localUserId": {
             "description": "User on this node",
             "format": "uuid",
@@ -34045,6 +34050,10 @@
             "nullable": true,
             "type": "string"
           },
+          "forceSyncOffloaded": {
+            "description": "Whether a pull restores the original of a photo this node has offloaded to a storage target",
+            "type": "boolean"
+          },
           "id": {
             "description": "Pairing ID",
             "format": "uuid",
@@ -34115,6 +34124,7 @@
         "required": [
           "createdAt",
           "error",
+          "forceSyncOffloaded",
           "id",
           "lastSyncedAt",
           "localUserId",
@@ -34160,6 +34170,10 @@
       },
       "SyncPairingUpdateDto": {
         "properties": {
+          "forceSyncOffloaded": {
+            "description": "Download the original of a photo this node has offloaded to a storage target when the peer holds the same photo, and mark it restored. When off, offloaded files are left where they are. Metadata is synced either way.",
+            "type": "boolean"
+          },
           "pullEnabled": {
             "description": "Bring the paired user's assets here",
             "type": "boolean"

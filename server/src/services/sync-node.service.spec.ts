@@ -29,6 +29,7 @@ const pairingStub = {
   apiKey: 'paired-user-key',
   pushEnabled: true,
   pullEnabled: true,
+  forceSyncOffloaded: false,
   pushCursor: null,
   pullCursor: null,
   lastSyncedAt: null,
@@ -187,6 +188,7 @@ describe(SyncNodeService.name, () => {
           remoteApiKey: 'k',
           pushEnabled: true,
           pullEnabled: true,
+          forceSyncOffloaded: false,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -201,6 +203,7 @@ describe(SyncNodeService.name, () => {
           remoteApiKey: 'k',
           pushEnabled: true,
           pullEnabled: true,
+          forceSyncOffloaded: false,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -221,6 +224,7 @@ describe(SyncNodeService.name, () => {
         remoteApiKey: 'paired-user-key',
         pushEnabled: true,
         pullEnabled: false,
+        forceSyncOffloaded: false,
       });
 
       expect(mocks.syncNode.createPairing).toHaveBeenCalledWith(
@@ -252,6 +256,7 @@ describe(SyncNodeService.name, () => {
           remoteApiKey: 'admin-key',
           pushEnabled: true,
           pullEnabled: true,
+          forceSyncOffloaded: false,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
 
@@ -335,6 +340,30 @@ describe(SyncNodeService.name, () => {
 
       await expect(sut.cancelPairingItems('nope', {})).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.syncNode.deletePendingItems).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updatePairing offloaded files', () => {
+    it('should restore already matched offloaded photos once the option is turned on', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue(pairingStub);
+      mocks.syncNode.updatePairing.mockResolvedValue({ ...pairingStub, forceSyncOffloaded: true });
+
+      await sut.updatePairing('pairing-1', { forceSyncOffloaded: true });
+
+      expect(mocks.syncNode.clearMetadataMarks).toHaveBeenCalledWith('pairing-1');
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: 'NodeSyncMetadataQueue',
+        data: { pairingId: 'pairing-1' },
+      });
+    });
+
+    it('should not start a pass when the option was already on', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue({ ...pairingStub, forceSyncOffloaded: true });
+      mocks.syncNode.updatePairing.mockResolvedValue({ ...pairingStub, forceSyncOffloaded: true });
+
+      await sut.updatePairing('pairing-1', { pushEnabled: false });
+
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 

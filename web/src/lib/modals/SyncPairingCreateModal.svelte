@@ -26,6 +26,7 @@
   let remoteApiKey = $state('');
   let pushEnabled = $state(true);
   let pullEnabled = $state(true);
+  let forceSyncOffloaded = $state(false);
   let loadError = $state('');
 
   onMount(async () => {
@@ -58,6 +59,7 @@
       remoteApiKey,
       pushEnabled,
       pullEnabled,
+      forceSyncOffloaded,
     });
     if (success) {
       onClose();
@@ -100,6 +102,15 @@
 
     <Field label={$t('admin.sync_pairing_pull')} description={$t('admin.sync_pairing_pull_description')}>
       <Switch bind:checked={pullEnabled} />
+    </Field>
+
+    <!-- Restoring writes to this server, so it only means anything while pulling. -->
+    <Field
+      label={$t('admin.sync_pairing_force_offloaded')}
+      description={$t('admin.sync_pairing_force_offloaded_description')}
+      disabled={!pullEnabled}
+    >
+      <Switch bind:checked={forceSyncOffloaded} />
     </Field>
   </div>
 </FormModal>

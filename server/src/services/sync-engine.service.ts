@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import { DateTime } from 'luxon';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { NODE_SYNC_MAX_ATTEMPTS } from 'src/constants';
 import { StorageCore } from 'src/cores/storage.core';
 import { OnEvent, OnJob } from 'src/decorators';
@@ -36,6 +37,7 @@ import {
   SyncedMetadata,
   toSyncedFace,
 } from 'src/utils/node-sync-metadata';
+import { getRemoteCachePath } from 'src/utils/remote-cache';
 import { upsertTags } from 'src/utils/tag';
 
 /** How many local changes one pair run walks through before stopping. */
@@ -425,6 +427,30 @@ export class SyncEngineService extends BaseService {
         return JobStatus.Skipped;
       }
 
+      // The peer reports its checksum up front, so a photo already here -- including
+      // one offloaded to a storage target -- is matched without downloading it. Whether
+      // an offloaded original comes back is then up to the pairing.
+      const knownId = remote.checksum
+        ? await this.assetRepository.getUploadAssetIdByChecksum(
+            pairing.localUserId,
+            Buffer.from(remote.checksum, 'base64'),
+          )
+        : undefined;
+
+      if (knownId) {
+        const adopted = await this.syncNodeRepository.upsertAssetMapping({
+          nodeUserId: pairingId,
+          localAssetId: knownId,
+          remoteAssetId: assetId,
+          checksum: Buffer.from(remote.checksum, 'base64'),
+          origin: 'pull-dedupe',
+        });
+
+        await this.reconcileMapping(context, adopted);
+        await this.syncNodeRepository.markSucceeded(pairingId, SyncDirection.Pull, assetId);
+        return JobStatus.Skipped;
+      }
+
       localPath = join(folder, `${uuid}${getFilenameExtension(remote.originalFileName)}`);
       this.storageRepository.mkdirSync(folder);
 
@@ -657,8 +683,67 @@ export class SyncEngineService extends BaseService {
     context: SyncContext,
     mapping: { id: string; localAssetId: string; remoteAssetId: string },
   ): Promise<void> {
-    const updateId = await this.reconcileMetadata(context, mapping);
+    // Metadata first, so it is in step even when restoring the original fails.
+    let updateId = await this.reconcileMetadata(context, mapping);
+
+    if (await this.restoreOffloadedOriginal(context, mapping)) {
+      const restored = await this.syncNodeRepository.getAssetMetadata(mapping.localAssetId);
+      updateId = restored?.updateId ?? updateId;
+    }
+
     await this.syncNodeRepository.updateAssetMapping(mapping.id, { metadataUpdateId: updateId, updatedAt: new Date() });
+  }
+
+  /**
+   * Bring back the original of a photo this node has offloaded, from the peer's
+   * copy of the same photo. Only when the pairing pulls and forces offloaded
+   * files; otherwise the file stays on its storage target.
+   *
+   * The download is checked against the asset's own checksum before it replaces
+   * anything, and only then is the asset marked restored. The object on the
+   * storage target is left in place, so offloading again does not upload it twice.
+   */
+  private async restoreOffloadedOriginal(
+    { pairing, credentials }: SyncContext,
+    mapping: { localAssetId: string; remoteAssetId: string },
+  ): Promise<boolean> {
+    if (!pairing.pullEnabled || !pairing.forceSyncOffloaded) {
+      return false;
+    }
+
+    const asset = await this.syncNodeRepository.getAssetMetadata(mapping.localAssetId);
+    if (!asset?.offloadedAt) {
+      return false;
+    }
+
+    const partialPath = `${asset.originalPath}.sync-restore`;
+
+    try {
+      this.storageRepository.mkdirSync(dirname(asset.originalPath));
+
+      const stream = await this.nodeClientRepository.downloadAsset(credentials, mapping.remoteAssetId);
+      await pipeline(stream, this.storageRepository.createWriteStream(partialPath));
+
+      const checksum = await this.cryptoRepository.hashFile(partialPath);
+      if (Buffer.compare(checksum, asset.checksum) !== 0) {
+        throw new Error(
+          `The copy of ${asset.originalFileName} on the peer does not match this asset, so it was not restored`,
+        );
+      }
+
+      await this.storageRepository.rename(partialPath, asset.originalPath);
+    } catch (error) {
+      await this.storageRepository.unlink(partialPath).catch(() => {});
+      throw error;
+    }
+
+    await this.storageTargetRepository.setOffloadedAt(asset.id, null);
+
+    // The original is local again, so a cached copy of the remote one is dead weight.
+    await this.storageRepository.unlink(getRemoteCachePath(asset)).catch(() => {});
+
+    this.logger.log(`Restored the offloaded original of ${asset.id} from pairing ${pairing.id}`);
+    return true;
   }
 
   /**

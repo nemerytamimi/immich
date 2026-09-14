@@ -731,6 +731,8 @@ export type SyncPairingResponseDto = {
     createdAt: string;
     /** Reason the last sync failed */
     error: string | null;
+    /** Whether a pull restores the original of a photo this node has offloaded to a storage target */
+    forceSyncOffloaded: boolean;
     /** Pairing ID */
     id: string;
     /** Last successful sync */
@@ -757,6 +759,8 @@ export type SyncPairingResponseDto = {
     syncedCount: number;
 };
 export type SyncPairingUpdateDto = {
+    /** Download the original of a photo this node has offloaded to a storage target when the peer holds the same photo, and mark it restored. When off, offloaded files are left where they are. Metadata is synced either way. */
+    forceSyncOffloaded?: boolean;
     /** Bring the paired user's assets here */
     pullEnabled?: boolean;
     /** Send this user's assets to the peer */
@@ -817,6 +821,8 @@ export type SyncNodeUpdateDto = {
     url?: string;
 };
 export type SyncPairingCreateDto = {
+    /** Download the original of a photo this node has offloaded to a storage target when the peer holds the same photo, and mark it restored. When off, offloaded files are left where they are. Metadata is synced either way. */
+    forceSyncOffloaded?: boolean;
     /** User on this node */
     localUserId: string;
     /** Bring the paired user's assets here */
