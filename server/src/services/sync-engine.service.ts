@@ -75,6 +75,7 @@ const toRemoteMetadata = (asset: RemoteAsset): SyncedMetadata => {
       (asset.visibility as AssetVisibility | undefined) ??
       (asset.isArchived ? AssetVisibility.Archive : AssetVisibility.Timeline),
     tags: (asset.tags ?? []).map(({ value }) => value),
+    originalFileName: asset.originalFileName,
   };
 };
 
@@ -324,7 +325,7 @@ export class SyncEngineService extends BaseService {
    * Remote -> local. The peer is queried through its public search API, which
    * filters on `updatedAfter`, so this side advances on a timestamp.
    */
-  private async pull(pairingId: string): Promise<void> {
+  private async pull(pairingId: string, { fromStart = false }: { fromStart?: boolean } = {}): Promise<void> {
     const context = await this.getContext(pairingId);
     if (!context) {
       return;
@@ -337,7 +338,7 @@ export class SyncEngineService extends BaseService {
     for (;;) {
       const { items, nextPage } = await this.nodeClientRepository.searchAssets(credentials, {
         userId: pairing.remoteUserId,
-        updatedAfter: pairing.pullCursor ? new Date(pairing.pullCursor) : undefined,
+        updatedAfter: pairing.pullCursor && !fromStart ? new Date(pairing.pullCursor) : undefined,
         page,
         size: PULL_PAGE_SIZE,
       });
@@ -605,6 +606,14 @@ export class SyncEngineService extends BaseService {
     }
 
     this.logger.log(`Queued ${total} matched asset(s) for a metadata comparison on pairing ${pairingId}`);
+
+    // A copy that reached this node some other way -- a storage target import, a
+    // restore from backup -- was never matched, and the peer's change feed will
+    // not bring it up again. Walking the peer's whole library matches those by
+    // checksum without downloading them, and compares their metadata too.
+    if (context.pairing.pullEnabled) {
+      await this.pull(pairingId, { fromStart: true });
+    }
     return JobStatus.Success;
   }
 
@@ -788,6 +797,7 @@ export class SyncEngineService extends BaseService {
         isFavorite: local.isFavorite,
         visibility: local.visibility,
         tags: localTags,
+        originalFileName: local.originalFileName,
       },
       toRemoteMetadata(remote),
     );
@@ -850,12 +860,24 @@ export class SyncEngineService extends BaseService {
       });
     }
 
-    if (changes.isFavorite !== undefined || changes.visibility !== undefined) {
-      await this.assetRepository.update({
-        id: asset.id,
-        isFavorite: changes.isFavorite,
-        visibility: changes.visibility,
-      });
+    const assetUpdate = {
+      isFavorite: changes.isFavorite,
+      visibility: changes.visibility,
+      originalFileName: changes.originalFileName,
+      // The timeline sorts and shows by these, so they follow the capture date
+      // straight away rather than waiting for the file to be read again.
+      ...(changes.dateTimeOriginal && {
+        fileCreatedAt: changes.dateTimeOriginal.value,
+        localDateTime: DateTime.fromJSDate(changes.dateTimeOriginal.value, {
+          zone: changes.dateTimeOriginal.timeZone ?? 'UTC',
+        })
+          .setZone('UTC', { keepLocalTime: true })
+          .toJSDate(),
+      }),
+    };
+
+    if (Object.values(assetUpdate).some((value) => value !== undefined)) {
+      await this.assetRepository.update({ id: asset.id, ...assetUpdate });
     }
 
     if (changes.tags) {

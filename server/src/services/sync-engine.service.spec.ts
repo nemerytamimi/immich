@@ -613,6 +613,18 @@ describe(SyncEngineService.name, () => {
   });
 
   describe('handleMetadataQueue', () => {
+    it('should also walk the whole peer library so copies never matched are found', async () => {
+      mocks.syncNode.getAssetMappingPage.mockResolvedValueOnce([]);
+      mocks.syncNode.getPairing.mockResolvedValue({ ...pairingStub, pullCursor: new Date('2026-09-01') });
+
+      await sut.handleMetadataQueue({ pairingId: 'pairing-1' });
+
+      expect(mocks.nodeClient.searchAssets).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ updatedAfter: undefined }),
+      );
+    });
+
     it('should send every matched asset through the push job so its metadata is compared', async () => {
       mocks.syncNode.getAssetMappingPage.mockResolvedValueOnce([
         { id: 'mapping-1', localAssetId: 'asset-1' },

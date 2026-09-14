@@ -13,7 +13,11 @@ export type SyncSide = 'local' | 'remote';
 
 /** One node's metadata for an asset both nodes hold, in a shape the two can be compared in. */
 export type SyncedMetadata = {
-  /** When the photo was taken, falling back to when the file was created. */
+  /**
+   * When the photo was taken, falling back to when the file was created. This is
+   * the date the timeline shows, so it is what gets compared and copied: a copy
+   * with no EXIF date at all still carries its date in the file's creation time.
+   */
   createdAt: Date | null;
   /** When the asset last changed on this node. */
   modifiedAt: Date | null;
@@ -26,6 +30,7 @@ export type SyncedMetadata = {
   isFavorite: boolean;
   visibility: AssetVisibility;
   tags: string[];
+  originalFileName: string;
 };
 
 /** What has to change on one node to bring it in line. Only what differs is present. */
@@ -38,6 +43,8 @@ export type MetadataChanges = {
   visibility?: AssetVisibility;
   /** Tags to add. Tags are never removed. */
   tags?: string[];
+  /** Only ever applied locally: another node's API has no way to rename a file. */
+  originalFileName?: string;
 };
 
 export type MetadataPlan = {
@@ -115,6 +122,15 @@ const settle = <T>(
   }
 };
 
+/**
+ * A file name that is only an id -- what an export keyed by asset id, or an
+ * import of one, leaves behind. It says nothing about the photo, so it is treated
+ * as missing and the other node's real name is taken instead.
+ */
+const GENERATED_NAME = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}(\.\w+)?$/i;
+
+const asMeaningfulName = (name: string) => (!name || GENERATED_NAME.test(name) ? null : name);
+
 const asLocation = ({ latitude, longitude }: SyncedMetadata) =>
   latitude === null || longitude === null ? null : { latitude, longitude };
 
@@ -133,8 +149,8 @@ export const planMetadataSync = (local: SyncedMetadata, remote: SyncedMetadata):
 
   settle(
     plan,
-    local.dateTimeOriginal,
-    remote.dateTimeOriginal,
+    local.createdAt,
+    remote.createdAt,
     (a, b) => Math.abs(a.getTime() - b.getTime()) < SAME_MOMENT_MS,
     (changes, value, source) => {
       changes.dateTimeOriginal = { value, timeZone: sides[source].timeZone };
@@ -196,6 +212,16 @@ export const planMetadataSync = (local: SyncedMetadata, remote: SyncedMetadata):
       },
     );
   }
+
+  settle(
+    plan,
+    asMeaningfulName(local.originalFileName),
+    asMeaningfulName(remote.originalFileName),
+    (a, b) => a === b,
+    (changes, value) => {
+      changes.originalFileName = value;
+    },
+  );
 
   // A tag missing on one node is taken as lost, like any other empty field, so
   // tags only ever accumulate. Removing a tag on one node does not remove it from
