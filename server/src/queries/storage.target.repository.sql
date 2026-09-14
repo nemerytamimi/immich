@@ -87,6 +87,44 @@ where
       and "asset_file"."type" = $6
   )
 
+-- StorageTargetRepository.countAssetsMissingPreviews
+select
+  count(*) as "count"
+from
+  (
+    select
+      "asset"."id"
+    from
+      "asset"
+    where
+      "asset"."ownerId" = $1
+      and "asset"."deletedAt" is null
+      and "asset"."isExternal" = $2
+      and "asset"."isOffline" = $3
+      and "asset"."visibility" != $4
+      and "asset"."offloadedAt" is null
+      and (
+        not exists (
+          select
+            "asset_file"."id"
+          from
+            "asset_file"
+          where
+            "asset_file"."assetId" = "asset"."id"
+            and "asset_file"."type" = $5
+        )
+        or not exists (
+          select
+            "asset_file"."id"
+          from
+            "asset_file"
+          where
+            "asset_file"."assetId" = "asset"."id"
+            and "asset_file"."type" = $6
+        )
+      )
+  ) as "candidate"
+
 -- StorageTargetRepository.streamAssetsForRestore
 select
   "asset"."id"

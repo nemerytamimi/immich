@@ -1,13 +1,16 @@
 import {
+  cancelStorageTransfer,
+  clearStorageTargetTransfers,
   createStorageTarget,
   deleteStorageTarget,
-  cancelStorageTransfer,
+  deleteStorageTransfer,
   exportToStorageTarget,
   importFromStorageTarget,
   offloadToStorageTarget,
   pauseStorageTransfer,
   restoreFromStorageTarget,
   resumeStorageTransfer,
+  retryStorageTransferItems,
   StorageTargetKind,
   testStorageTarget,
   updateStorageTarget,
@@ -15,6 +18,7 @@ import {
   type StorageTargetResponseDto,
   type StorageTargetUpdateDto,
   type StorageTransferCreateDto,
+  type StorageTransferItemDto,
   type StorageTransferResponseDto,
 } from '@immich/sdk';
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
@@ -254,6 +258,93 @@ export const handleCancelTransfer = async (transfer: StorageTransferResponseDto)
     eventManager.emit('StorageTransferUpdate', transfer);
   } catch (error) {
     handleError(error, $t('errors.unable_to_update_storage_transfer'));
+  }
+};
+
+/**
+ * Tries failed files again, one or all of them, without walking the library.
+ * Confirmed, because retrying before whatever broke them is fixed only fails
+ * them a second time.
+ */
+export const handleRetryTransferFailures = async (
+  transfer: StorageTransferResponseDto,
+  item?: StorageTransferItemDto,
+) => {
+  const $t = await getFormatter();
+
+  const confirmed = await modalManager.showDialog({
+    title: $t('admin.storage_target_transfer_retry_title'),
+    prompt: item
+      ? $t('admin.storage_target_transfer_retry_item_prompt', {
+          values: { name: item.fileName ?? item.remoteKey ?? item.assetId ?? item.id },
+        })
+      : $t('admin.storage_target_transfer_retry_prompt', { values: { count: transfer.failedCount } }),
+    confirmText: $t('admin.storage_target_transfer_retry'),
+  });
+
+  if (!confirmed) {
+    return false;
+  }
+
+  try {
+    const { count } = await retryStorageTransferItems({
+      id: transfer.id,
+      storageTransferRetryDto: item ? { itemIds: [item.id] } : {},
+    });
+    toastManager.info($t('admin.storage_target_transfer_retry_queued', { values: { count } }));
+    eventManager.emit('StorageTransferUpdate', transfer);
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_retry_storage_transfer'));
+    return false;
+  }
+};
+
+/** Removes one finished transfer, and its failure details, from the history. */
+export const handleDeleteTransfer = async (transfer: StorageTransferResponseDto) => {
+  const $t = await getFormatter();
+
+  const confirmed = await modalManager.showDialog({
+    title: $t('admin.storage_target_transfer_delete'),
+    prompt: $t('admin.storage_target_transfer_delete_prompt'),
+    confirmText: $t('admin.storage_target_transfer_delete'),
+    confirmColor: 'danger',
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await deleteStorageTransfer({ id: transfer.id });
+    toastManager.info($t('admin.storage_target_transfer_deleted'));
+    eventManager.emit('StorageTransferUpdate', transfer);
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_delete_storage_transfer'));
+  }
+};
+
+/** Clears every finished transfer for a target out of the history, to keep the database small. */
+export const handleClearTransferHistory = async (target: StorageTargetResponseDto) => {
+  const $t = await getFormatter();
+
+  const confirmed = await modalManager.showDialog({
+    title: $t('admin.storage_target_transfers_clear'),
+    prompt: $t('admin.storage_target_transfers_clear_prompt', { values: { name: target.name } }),
+    confirmText: $t('admin.storage_target_transfers_clear'),
+    confirmColor: 'danger',
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    const { count } = await clearStorageTargetTransfers({ id: target.id });
+    toastManager.info($t('admin.storage_target_transfers_cleared', { values: { count } }));
+    eventManager.emit('StorageTargetUpdate', target);
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_delete_storage_transfer'));
   }
 };
 

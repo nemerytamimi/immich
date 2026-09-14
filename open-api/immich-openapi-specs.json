@@ -1474,6 +1474,57 @@
         "x-immich-state": "Beta"
       }
     },
+    "/admin/storage-targets/transfers/{id}": {
+      "delete": {
+        "description": "Delete a completed, failed or cancelled transfer and its failure records. Nothing that was transferred is affected. Cancel a transfer that is still going before removing it.",
+        "operationId": "deleteStorageTransfer",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Remove a transfer from the history",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      }
+    },
     "/admin/storage-targets/transfers/{id}/cancel": {
       "post": {
         "description": "End a transfer for good. Whatever has already been transferred stays transferred; this stops the run rather than reversing it.",
@@ -1529,6 +1580,88 @@
           }
         ],
         "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/admin/storage-targets/transfers/{id}/items": {
+      "get": {
+        "description": "List the files a transfer failed on, with the file name, size, reason and attempt count for each, most recent first. An item leaves the list once a later attempt succeeds.",
+        "operationId": "getStorageTransferItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number for pagination",
+            "schema": {
+              "minimum": 1,
+              "maximum": 9007199254740991,
+              "default": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "name": "size",
+            "required": false,
+            "in": "query",
+            "description": "Number of items per page",
+            "schema": {
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferItemsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve the failed items of a transfer",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.read",
         "x-immich-state": "Beta"
       }
     },
@@ -1592,7 +1725,7 @@
     },
     "/admin/storage-targets/transfers/{id}/resume": {
       "post": {
-        "description": "Re-queue a paused transfer. Every direction is idempotent, so it picks up whatever is still outstanding rather than repeating completed work. The progress counters restart with the new run.",
+        "description": "Re-queue a paused transfer under a new run. Every direction is idempotent, so it picks up whatever is still outstanding rather than repeating completed work, and work queued before the pause no longer acts. Completed items stay counted, except for an export, whose count restarts because its walk re-counts what is already on the target.",
         "operationId": "resumeStorageTransfer",
         "parameters": [
           {
@@ -1630,6 +1763,74 @@
           }
         ],
         "summary": "Resume a paused transfer",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/admin/storage-targets/transfers/{id}/retry": {
+      "post": {
+        "description": "Queue failed items again under the transfer, without walking the whole library. Omit the item list to retry every failure. A paused transfer retries its failures when it is resumed instead.",
+        "operationId": "retryStorageTransferItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StorageTransferRetryDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferCountResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retry the failed items of a transfer",
         "tags": [
           "Storage targets (admin)"
         ],
@@ -2152,6 +2353,62 @@
       }
     },
     "/admin/storage-targets/{id}/transfers": {
+      "delete": {
+        "description": "Delete every completed, failed and cancelled transfer for a storage target, with their failure records. Pending, running and paused transfers are kept, and nothing that was transferred is affected.",
+        "operationId": "clearStorageTargetTransfers",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageTransferCountResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Clear finished transfers from the history",
+        "tags": [
+          "Storage targets (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminStorageTarget.update",
+        "x-immich-state": "Beta"
+      },
       "get": {
         "description": "Retrieve recent import and export transfers for a storage target, including progress.",
         "operationId": "getStorageTargetTransfers",
@@ -2646,6 +2903,57 @@
           }
         ],
         "x-immich-permission": "adminSyncNode.read",
+        "x-immich-state": "Beta"
+      }
+    },
+    "/admin/sync-nodes/pairings/{id}/reconcile-metadata": {
+      "post": {
+        "description": "Compare the metadata of every asset both nodes hold -- capture date, place, rating, description, favorite, archive state, tags and face names -- and fill in or correct each side. A value missing on one node is copied from the other; where both have one and they disagree, the node with the older capture date keeps its value, or for the same capture date the more recently edited one. Tags and names are only ever added.",
+        "operationId": "reconcileSyncPairingMetadata",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Reconcile metadata for a pairing",
+        "tags": [
+          "Sync nodes (admin)"
+        ],
+        "x-immich-admin-only": true,
+        "x-immich-history": [
+          {
+            "version": "v3",
+            "state": "Added"
+          },
+          {
+            "version": "v3",
+            "state": "Beta"
+          }
+        ],
+        "x-immich-permission": "adminSyncNode.update",
         "x-immich-state": "Beta"
       }
     },
@@ -24517,7 +24825,8 @@
           "NodeSyncPushAsset",
           "NodeSyncRetryFailed",
           "NodeSyncPullAsset",
-          "NodeSyncAlbums"
+          "NodeSyncAlbums",
+          "NodeSyncMetadataQueue"
         ],
         "type": "string"
       },
@@ -31529,6 +31838,20 @@
         },
         "type": "object"
       },
+      "StorageTransferCountResponseDto": {
+        "properties": {
+          "count": {
+            "description": "How many were affected",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
       "StorageTransferCreateDto": {
         "properties": {
           "ownerId": {
@@ -31562,6 +31885,92 @@
           "restore"
         ],
         "type": "string"
+      },
+      "StorageTransferItemDto": {
+        "properties": {
+          "assetId": {
+            "description": "Local asset ID, for an export, offload or restore",
+            "nullable": true,
+            "type": "string"
+          },
+          "attempts": {
+            "description": "How many times this item has failed",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "When the item first failed",
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "description": "Why the last attempt failed",
+            "type": "string"
+          },
+          "fileName": {
+            "description": "File name, where one is known",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Failure record ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "remoteKey": {
+            "description": "Object key on the target, where one is known",
+            "nullable": true,
+            "type": "string"
+          },
+          "size": {
+            "description": "Size in bytes, where known",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "nullable": true,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "description": "When the item last failed",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "attempts",
+          "createdAt",
+          "error",
+          "fileName",
+          "id",
+          "remoteKey",
+          "size",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "StorageTransferItemsResponseDto": {
+        "properties": {
+          "items": {
+            "description": "Failed items on this page, most recent first",
+            "items": {
+              "$ref": "#/components/schemas/StorageTransferItemDto"
+            },
+            "type": "array"
+          },
+          "total": {
+            "description": "How many items failed, across every page",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
       },
       "StorageTransferResponseDto": {
         "properties": {
@@ -31613,6 +32022,12 @@
             "nullable": true,
             "type": "string"
           },
+          "skippedCount": {
+            "description": "Number of items left out because they are not ready to transfer yet, such as assets with no thumbnail",
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
           "startedAt": {
             "description": "Start date",
             "format": "date-time",
@@ -31645,11 +32060,26 @@
           "id",
           "ownerId",
           "prefix",
+          "skippedCount",
           "startedAt",
           "status",
           "targetId",
           "totalCount"
         ],
+        "type": "object"
+      },
+      "StorageTransferRetryDto": {
+        "properties": {
+          "itemIds": {
+            "description": "Failed items to retry. Omit to retry every failed item.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "StorageTransferScopeDto": {
@@ -33461,6 +33891,15 @@
           "direction": {
             "$ref": "#/components/schemas/SyncDirection",
             "description": "Limit to one direction. Omit to discard both."
+          },
+          "itemIds": {
+            "description": "Remove only these ledger entries, such as items that need attention. Omit to discard everything.",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "type": "object"

@@ -8,7 +8,11 @@ import {
   StorageTransferScopeTypeSchema,
   StorageTransferStatusSchema,
 } from 'src/enum';
-import { StorageTargetTable, StorageTargetTransferTable } from 'src/schema/tables/storage-target.table';
+import {
+  StorageTargetTable,
+  StorageTargetTransferItemTable,
+  StorageTargetTransferTable,
+} from 'src/schema/tables/storage-target.table';
 import { StorageTargetConfig, StorageTargetSecret } from 'src/types';
 import { asDateTimeString } from 'src/utils/date';
 import z from 'zod';
@@ -128,6 +132,11 @@ const StorageTransferResponseSchema = z
     totalCount: z.int().describe('Number of items queued'),
     completedCount: z.int().describe('Number of items completed'),
     failedCount: z.int().describe('Number of items that failed'),
+    skippedCount: z
+      .int()
+      .describe(
+        'Number of items left out because they are not ready to transfer yet, such as assets with no thumbnail',
+      ),
     startedAt: z.string().meta({ format: 'date-time' }).nullable().describe('Start date'),
     finishedAt: z.string().meta({ format: 'date-time' }).nullable().describe('Completion date'),
     error: z.string().nullable().describe('Failure reason, if the transfer failed as a whole'),
@@ -207,10 +216,72 @@ export function mapStorageTransfer(entity: Selectable<StorageTargetTransferTable
     totalCount: entity.totalCount,
     completedCount: entity.completedCount,
     failedCount: entity.failedCount,
+    skippedCount: entity.skippedCount,
     startedAt: entity.startedAt ? asDateTimeString(entity.startedAt) : null,
     finishedAt: entity.finishedAt ? asDateTimeString(entity.finishedAt) : null,
     error: entity.error,
     prefix: entity.prefix,
     createdAt: asDateTimeString(entity.createdAt),
+  };
+}
+
+const StorageTransferItemSearchSchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1).describe('Page number for pagination'),
+    size: z.coerce.number().int().min(1).max(1000).default(100).describe('Number of items per page'),
+  })
+  .meta({ id: 'StorageTransferItemSearchDto' });
+
+const StorageTransferItemSchema = z
+  .object({
+    id: z.uuidv4().describe('Failure record ID'),
+    assetId: z.string().nullable().describe('Local asset ID, for an export, offload or restore'),
+    remoteKey: z.string().nullable().describe('Object key on the target, where one is known'),
+    fileName: z.string().nullable().describe('File name, where one is known'),
+    size: z.int().nullable().describe('Size in bytes, where known'),
+    attempts: z.int().describe('How many times this item has failed'),
+    error: z.string().describe('Why the last attempt failed'),
+    createdAt: z.string().meta({ format: 'date-time' }).describe('When the item first failed'),
+    updatedAt: z.string().meta({ format: 'date-time' }).describe('When the item last failed'),
+  })
+  .meta({ id: 'StorageTransferItemDto' });
+
+const StorageTransferItemsResponseSchema = z
+  .object({
+    items: z.array(StorageTransferItemSchema).describe('Failed items on this page, most recent first'),
+    total: z.int().describe('How many items failed, across every page'),
+  })
+  .meta({ id: 'StorageTransferItemsResponseDto' });
+
+const StorageTransferRetrySchema = z
+  .object({
+    itemIds: z.array(z.uuidv4()).optional().describe('Failed items to retry. Omit to retry every failed item.'),
+  })
+  .meta({ id: 'StorageTransferRetryDto' });
+
+const StorageTransferCountResponseSchema = z
+  .object({
+    count: z.int().describe('How many were affected'),
+  })
+  .meta({ id: 'StorageTransferCountResponseDto' });
+
+export class StorageTransferItemSearchDto extends createZodDto(StorageTransferItemSearchSchema) {}
+export class StorageTransferItemDto extends createZodDto(StorageTransferItemSchema) {}
+export class StorageTransferItemsResponseDto extends createZodDto(StorageTransferItemsResponseSchema) {}
+export class StorageTransferRetryDto extends createZodDto(StorageTransferRetrySchema) {}
+export class StorageTransferCountResponseDto extends createZodDto(StorageTransferCountResponseSchema) {}
+
+export function mapStorageTransferItem(entity: Selectable<StorageTargetTransferItemTable>): StorageTransferItemDto {
+  return {
+    id: entity.id,
+    assetId: entity.assetId,
+    remoteKey: entity.remoteKey,
+    fileName: entity.fileName,
+    // bigint comes back from the driver as a string.
+    size: entity.size === null ? null : Number(entity.size),
+    attempts: entity.attempts,
+    error: entity.error,
+    createdAt: asDateTimeString(entity.createdAt),
+    updatedAt: asDateTimeString(entity.updatedAt),
   };
 }

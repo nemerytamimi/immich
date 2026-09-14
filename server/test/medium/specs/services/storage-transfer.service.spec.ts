@@ -1,5 +1,6 @@
 import { CreateBucketCommand, S3Client } from '@aws-sdk/client-s3';
 import { Kysely } from 'kysely';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -156,17 +157,49 @@ describe(`${StorageTransferService.name} (S3)`, () => {
       scope: { type: 'all' } as never,
     });
 
-    const early = await repository.incrementTransferProgress(transfer.id, { completed: 1 });
-    expect(early.status).toBe(StorageTransferStatus.Running);
+    const early = await repository.incrementTransferProgress(transfer.id, transfer.runId, { completed: 1 });
+    expect(early?.status).toBe(StorageTransferStatus.Running);
 
     // Once the real total lands, the reconciling call closes it out.
     await repository.updateTransfer(transfer.id, { totalCount: 2 });
-    const stillRunning = await repository.incrementTransferProgress(transfer.id, {});
-    expect(stillRunning.status).toBe(StorageTransferStatus.Running);
+    const stillRunning = await repository.incrementTransferProgress(transfer.id, transfer.runId, {});
+    expect(stillRunning?.status).toBe(StorageTransferStatus.Running);
 
-    const done = await repository.incrementTransferProgress(transfer.id, { completed: 1 });
-    expect(done.status).toBe(StorageTransferStatus.Completed);
-    expect(done.finishedAt).toBeTruthy();
+    const done = await repository.incrementTransferProgress(transfer.id, transfer.runId, { completed: 1 });
+    expect(done?.status).toBe(StorageTransferStatus.Completed);
+    expect(done?.finishedAt).toBeTruthy();
+  }, 30_000);
+
+  it('should not count a job from a run that has since been replaced', async () => {
+    const { ctx } = setup();
+    const target = await newTarget('stale-run');
+    const { user } = await ctx.newUser();
+
+    const repository = new StorageTargetRepository(defaultDatabase);
+
+    const transfer = await repository.createTransfer({
+      targetId: target.id,
+      ownerId: user.id,
+      direction: StorageTransferDirection.Offload,
+      status: StorageTransferStatus.Running,
+      scope: { type: 'all' } as never,
+      runId: randomUUID(),
+      totalCount: 1,
+    });
+
+    // A pause and resume moves the transfer on to a new run...
+    await repository.updateTransfer(transfer.id, { runId: randomUUID() });
+
+    // ...so a job from the old one, finishing late, neither counts nor closes it.
+    await expect(repository.incrementTransferProgress(transfer.id, transfer.runId, { completed: 1 })).resolves.toBe(
+      undefined,
+    );
+    await expect(
+      repository.updateTransferRun(transfer.id, transfer.runId, { totalCount: 99 }),
+    ).resolves.toBeUndefined();
+
+    const current = await repository.getTransfer(transfer.id);
+    expect(current).toMatchObject({ status: StorageTransferStatus.Running, completedCount: 0, totalCount: 1 });
   }, 30_000);
 
   it('should skip an import whose bytes the user already has', async () => {

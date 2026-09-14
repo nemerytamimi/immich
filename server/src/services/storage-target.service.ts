@@ -1,30 +1,37 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { AssetOffloadDto } from 'src/dtos/asset.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
 import {
   mapStorageTarget,
   mapStorageTransfer,
+  mapStorageTransferItem,
   StorageTargetConfigDto,
   StorageTargetCreateDto,
   StorageTargetResponseDto,
   StorageTargetSecretDto,
   StorageTargetTestResponseDto,
   StorageTargetUpdateDto,
+  StorageTransferCountResponseDto,
   StorageTransferCreateDto,
+  StorageTransferItemSearchDto,
+  StorageTransferItemsResponseDto,
   StorageTransferResponseDto,
+  StorageTransferRetryDto,
   StorageTransferScopeDto,
 } from 'src/dtos/storage-target.dto';
 import {
   JobName,
   Permission,
   STORAGE_TRANSFER_FINISHED,
+  STORAGE_TRANSFER_STOPPED,
   StorageTargetKind,
   StorageTransferDirection,
   StorageTransferScopeType,
   StorageTransferStatus,
 } from 'src/enum';
 import { BaseService } from 'src/services/base.service';
-import { StorageTargetConfig, StorageTargetSecret, StorageTransferScope } from 'src/types';
+import { JobItem, StorageTargetConfig, StorageTargetSecret, StorageTransferScope } from 'src/types';
 
 const QUEUE_JOB_BY_DIRECTION = {
   [StorageTransferDirection.Export]: JobName.StorageTargetExportQueue,
@@ -195,13 +202,24 @@ export class StorageTargetService extends BaseService {
   }
 
   /**
-   * Pick a paused transfer back up by re-queueing its walk.
+   * Pick a paused transfer back up by re-queueing its walk under a new run.
    *
    * Every direction is idempotent -- an export skips what the ledger already
    * holds, an offload skips what is already offloaded, a restore skips what is
    * already local -- so resuming re-enumerates whatever is still outstanding
-   * instead of tracking a position. The counters restart with it, since they
-   * describe the run that is about to happen rather than the one that stopped.
+   * instead of tracking a position.
+   *
+   * The new run is what keeps the jobs from before the pause out of it. They are
+   * still on the queue, and without it they would start acting again the moment
+   * the status stopped saying paused, counting toward a run that did not queue
+   * them.
+   *
+   * Work already done stays counted, so a resumed transfer carries on rather than
+   * appearing to start over: offload, restore and import leave finished items out
+   * of their walk, so the walk only adds what is left. Export is the exception --
+   * it walks every asset and counts the ones the ledger holds as it goes, so
+   * keeping its count would count those twice. Failures are cleared either way,
+   * since those items are back in the walk for another try.
    */
   async resumeTransfer(id: string): Promise<StorageTransferResponseDto> {
     const transfer = await this.findOrFailTransfer(id);
@@ -215,14 +233,21 @@ export class StorageTargetService extends BaseService {
       throw new BadRequestException('Storage target is disabled');
     }
 
+    const recountsFinished = transfer.direction === StorageTransferDirection.Export;
+
     const updated = await this.storageTargetRepository.updateTransfer(id, {
       status: StorageTransferStatus.Pending,
-      totalCount: 0,
-      completedCount: 0,
+      runId: randomUUID(),
+      ...(recountsFinished && { totalCount: 0, completedCount: 0 }),
       failedCount: 0,
+      skippedCount: 0,
       finishedAt: null,
       error: null,
     });
+
+    // The failed items are back in the walk, so their records would only describe
+    // attempts the failed count no longer includes. Any that fail again record anew.
+    await this.storageTargetRepository.clearTransferFailures(id);
 
     await this.jobRepository.queue({
       name: QUEUE_JOB_BY_DIRECTION[transfer.direction],
@@ -250,6 +275,120 @@ export class StorageTargetService extends BaseService {
     });
 
     return mapStorageTransfer(updated);
+  }
+
+  /** What failed in a transfer, file by file. */
+  async getTransferFailures(id: string, dto: StorageTransferItemSearchDto): Promise<StorageTransferItemsResponseDto> {
+    await this.findOrFailTransfer(id);
+
+    const [items, total] = await Promise.all([
+      this.storageTargetRepository.getTransferFailures(id, { take: dto.size, skip: (dto.page - 1) * dto.size }),
+      this.storageTargetRepository.getTransferFailureTotal(id),
+    ]);
+
+    return { items: items.map((item) => mapStorageTransferItem(item)), total };
+  }
+
+  /**
+   * Try failed items again without walking the whole library.
+   *
+   * They are queued under the transfer's current run and come off its failed
+   * count, and a transfer that had already closed opens again, so the counters
+   * and status go on to describe the retried items too. A paused transfer is
+   * refused: resuming walks everything outstanding, failures included, so a
+   * retry on top of it would only race the walk.
+   */
+  async retryTransferFailures(id: string, dto: StorageTransferRetryDto): Promise<StorageTransferCountResponseDto> {
+    const transfer = await this.findOrFailTransfer(id);
+
+    if (transfer.status === StorageTransferStatus.Pending || STORAGE_TRANSFER_STOPPED.has(transfer.status)) {
+      throw new BadRequestException(`Failures cannot be retried while the transfer is ${transfer.status}`);
+    }
+
+    const target = await this.findOrFailTarget(transfer.targetId);
+    if (!target.isEnabled) {
+      throw new BadRequestException('Storage target is disabled');
+    }
+
+    if (dto.itemIds?.length === 0) {
+      return { count: 0 };
+    }
+
+    const items = await this.storageTargetRepository.getTransferFailuresForRetry(id, dto.itemIds);
+    if (items.length === 0) {
+      return { count: 0 };
+    }
+
+    await this.storageTargetRepository.reopenTransferForRetry(id, items.length);
+
+    const runId = transfer.runId ?? undefined;
+    await this.jobRepository.queueAll(items.map((item) => this.asRetryJob(transfer.direction, id, runId, item)));
+
+    this.logger.log(`Requeued ${items.length} failed item(s) for transfer ${id}`);
+    return { count: items.length };
+  }
+
+  /** Remove a finished transfer from the history, along with its failure records. */
+  async deleteTransfer(id: string): Promise<void> {
+    const transfer = await this.findOrFailTransfer(id);
+
+    if (!STORAGE_TRANSFER_FINISHED.has(transfer.status)) {
+      throw new BadRequestException(`A ${transfer.status} transfer cannot be removed, cancel it first`);
+    }
+
+    await this.storageTargetRepository.deleteTransfers([id]);
+  }
+
+  /**
+   * Clear a target's finished transfers out of the history. Pending, running and
+   * paused ones stay: removing those would leave work still on the queue with
+   * nothing to report to.
+   */
+  async clearTransferHistory(targetId: string): Promise<StorageTransferCountResponseDto> {
+    await this.findOrFailTarget(targetId);
+
+    const count = await this.storageTargetRepository.deleteTransfersByStatus(targetId, [...STORAGE_TRANSFER_FINISHED]);
+
+    if (count > 0) {
+      this.logger.log(`Removed ${count} finished transfer(s) from the history of storage target ${targetId}`);
+    }
+
+    return { count };
+  }
+
+  /** The job that retries one failed item, which depends on the direction that failed it. */
+  private asRetryJob(
+    direction: StorageTransferDirection,
+    transferId: string,
+    runId: string | undefined,
+    item: { itemKey: string; assetId: string | null; remoteKey: string | null; size: number | null },
+  ): JobItem {
+    switch (direction) {
+      case StorageTransferDirection.Import: {
+        return {
+          name: JobName.StorageTargetImportObject,
+          data: { transferId, runId, remoteKey: item.remoteKey ?? item.itemKey, size: Number(item.size ?? 0) },
+        };
+      }
+      case StorageTransferDirection.Export: {
+        return {
+          name: JobName.StorageTargetExportAsset,
+          data: { transferId, runId, assetId: item.assetId ?? item.itemKey },
+        };
+      }
+      case StorageTransferDirection.Offload: {
+        return {
+          name: JobName.StorageTargetOffloadAsset,
+          data: { transferId, runId, assetId: item.assetId ?? item.itemKey },
+        };
+      }
+      case StorageTransferDirection.Restore: {
+        return {
+          name: JobName.StorageTargetRestoreAsset,
+          data: { transferId, runId, assetId: item.assetId ?? item.itemKey },
+        };
+      }
+    }
   }
 
   private async findOrFailTransfer(id: string) {
@@ -281,6 +420,7 @@ export class StorageTargetService extends BaseService {
       ownerId: dto.ownerId,
       direction,
       status: StorageTransferStatus.Pending,
+      runId: randomUUID(),
       scope: asScope(dto.scope),
       // Only an import reads remote keys, so the scan root is meaningless for the
       // others and is not carried on them.

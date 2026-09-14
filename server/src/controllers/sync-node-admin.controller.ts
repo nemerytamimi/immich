@@ -221,4 +221,20 @@ export class SyncNodeAdminController {
   syncPairingNow(@Param() { id }: UUIDParamDto): Promise<void> {
     return this.service.syncPairingNow(id);
   }
+
+  @Post('pairings/:id/reconcile-metadata')
+  @Authenticated({ permission: Permission.AdminSyncNodeUpdate, admin: true })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Reconcile metadata for a pairing',
+    description:
+      'Compare the metadata of every asset both nodes hold -- capture date, place, rating, description, favorite, ' +
+      'archive state, tags and face names -- and fill in or correct each side. A value missing on one node is ' +
+      'copied from the other; where both have one and they disagree, the node with the older capture date keeps ' +
+      'its value, or for the same capture date the more recently edited one. Tags and names are only ever added.',
+    history: new HistoryBuilder().added('v3').beta('v3'),
+  })
+  reconcileSyncPairingMetadata(@Param() { id }: UUIDParamDto): Promise<void> {
+    return this.service.reconcilePairingMetadata(id);
+  }
 }

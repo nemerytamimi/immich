@@ -20,6 +20,20 @@ export type RemoteUser = {
   name: string;
 };
 
+export type RemoteExif = {
+  dateTimeOriginal?: string | null;
+  timeZone?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  rating?: number | null;
+  description?: string | null;
+};
+
+export type RemoteTag = {
+  id: string;
+  value: string;
+};
+
 export type RemoteAsset = {
   id: string;
   checksum: string;
@@ -32,6 +46,26 @@ export type RemoteAsset = {
   type: string;
   updatedAt: string;
   description?: string;
+  /** Only on an asset fetched by id, not in search results. */
+  exifInfo?: RemoteExif;
+  /** Only on an asset fetched by id, not in search results. */
+  tags?: RemoteTag[];
+};
+
+export type RemotePerson = {
+  id: string;
+  name: string;
+};
+
+export type RemoteFace = {
+  id: string;
+  imageWidth: number;
+  imageHeight: number;
+  boundingBoxX1: number;
+  boundingBoxY1: number;
+  boundingBoxX2: number;
+  boundingBoxY2: number;
+  person: RemotePerson | null;
 };
 
 export type RemoteAlbum = {
@@ -227,6 +261,7 @@ export class NodeClientRepository {
     });
   }
 
+  /** The asset with its EXIF and tags, which is what a metadata comparison needs. */
   getRemoteAsset(credentials: NodeCredentials, assetId: string): Promise<RemoteAsset> {
     return this.request<RemoteAsset>(credentials, `/assets/${assetId}`);
   }
@@ -245,7 +280,15 @@ export class NodeClientRepository {
   async updateAsset(
     credentials: NodeCredentials,
     assetId: string,
-    dto: { isFavorite?: boolean; description?: string; dateTimeOriginal?: string; visibility?: string },
+    dto: {
+      isFavorite?: boolean;
+      description?: string;
+      dateTimeOriginal?: string;
+      latitude?: number;
+      longitude?: number;
+      rating?: number;
+      visibility?: string;
+    },
   ): Promise<void> {
     await this.request(credentials, `/assets/${assetId}`, { method: 'PUT', ...this.json(dto) });
   }
@@ -275,5 +318,37 @@ export class NodeClientRepository {
 
   async addAssetsToAlbum(credentials: NodeCredentials, albumId: string, ids: string[]): Promise<void> {
     await this.request(credentials, `/albums/${albumId}/assets`, { method: 'PUT', ...this.json({ ids }) });
+  }
+
+  /** The faces detected on an asset, each with the person it is assigned to. */
+  getFaces(credentials: NodeCredentials, assetId: string): Promise<RemoteFace[]> {
+    return this.request<RemoteFace[]>(credentials, `/faces?id=${encodeURIComponent(assetId)}`);
+  }
+
+  /** People whose name resembles the one given. The match is fuzzy, so callers compare names themselves. */
+  searchPeople(credentials: NodeCredentials, name: string): Promise<RemotePerson[]> {
+    return this.request<RemotePerson[]>(credentials, `/search/person?name=${encodeURIComponent(name)}&withHidden=true`);
+  }
+
+  createPerson(credentials: NodeCredentials, dto: { name: string }): Promise<RemotePerson> {
+    return this.request<RemotePerson>(credentials, '/people', { method: 'POST', ...this.json(dto) });
+  }
+
+  async updatePerson(credentials: NodeCredentials, personId: string, dto: { name: string }): Promise<void> {
+    await this.request(credentials, `/people/${personId}`, { method: 'PUT', ...this.json(dto) });
+  }
+
+  /** Assign a face to a person. The person goes in the path and the face in the body. */
+  async reassignFace(credentials: NodeCredentials, personId: string, faceId: string): Promise<void> {
+    await this.request(credentials, `/faces/${personId}`, { method: 'PUT', ...this.json({ id: faceId }) });
+  }
+
+  /** Find or create tags by their full value, creating any parent tags a nested value needs. */
+  upsertTags(credentials: NodeCredentials, values: string[]): Promise<RemoteTag[]> {
+    return this.request<RemoteTag[]>(credentials, '/tags', { method: 'PUT', ...this.json({ tags: values }) });
+  }
+
+  async tagAssets(credentials: NodeCredentials, tagIds: string[], assetIds: string[]): Promise<void> {
+    await this.request(credentials, '/tags/assets', { method: 'PUT', ...this.json({ tagIds, assetIds }) });
   }
 }

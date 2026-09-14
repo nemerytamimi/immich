@@ -68,6 +68,8 @@ const transferStub = {
   finishedAt: null,
   error: null,
   prefix: null,
+  runId: null as string | null,
+  skippedCount: 0,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),
   updateId: 'update-1',
@@ -122,6 +124,8 @@ describe(StorageTargetService.name, () => {
       finishedAt: null,
       error: null,
       prefix: null,
+      runId: null as string | null,
+      skippedCount: 0,
       createdAt: new Date('2026-01-01'),
       updatedAt: new Date('2026-01-01'),
       updateId: 'update-1',
@@ -151,10 +155,15 @@ describe(StorageTargetService.name, () => {
       expect(mocks.storageTarget.updateTransfer).not.toHaveBeenCalled();
     });
 
-    it('should resume by re-queueing the walk with the counters reset', async () => {
-      // The counters describe the run about to happen, not the one that stopped:
-      // every direction re-enumerates what is still outstanding.
-      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Paused });
+    it('should resume under a new run, keeping what the stopped run completed', async () => {
+      // An offload walk leaves finished assets out, so the completed count carries
+      // over and the transfer continues instead of appearing to start again.
+      mocks.storageTarget.getTransfer.mockResolvedValue({
+        ...transferStub,
+        status: StorageTransferStatus.Paused,
+        runId: 'run-1',
+        failedCount: 2,
+      });
       mocks.storageTarget.get.mockResolvedValue(targetStub);
       mocks.storageTarget.updateTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Pending });
 
@@ -162,16 +171,37 @@ describe(StorageTargetService.name, () => {
 
       expect(mocks.storageTarget.updateTransfer).toHaveBeenCalledWith('transfer-1', {
         status: StorageTransferStatus.Pending,
-        totalCount: 0,
-        completedCount: 0,
+        runId: expect.any(String),
         failedCount: 0,
+        skippedCount: 0,
         finishedAt: null,
         error: null,
       });
+      // A fresh run is what keeps jobs queued before the pause from acting again.
+      expect(mocks.storageTarget.updateTransfer.mock.calls[0][1].runId).not.toBe('run-1');
       expect(mocks.job.queue).toHaveBeenCalledWith({
         name: JobName.StorageTargetOffloadQueue,
         data: { transferId: 'transfer-1' },
       });
+    });
+
+    it('should restart the count when resuming an export', async () => {
+      // An export walks every asset and counts the ones already on the target as
+      // it goes, so keeping the old count would count those twice.
+      mocks.storageTarget.getTransfer.mockResolvedValue({
+        ...transferStub,
+        direction: StorageTransferDirection.Export,
+        status: StorageTransferStatus.Paused,
+      });
+      mocks.storageTarget.get.mockResolvedValue(targetStub);
+      mocks.storageTarget.updateTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Pending });
+
+      await sut.resumeTransfer('transfer-1');
+
+      expect(mocks.storageTarget.updateTransfer).toHaveBeenCalledWith(
+        'transfer-1',
+        expect.objectContaining({ totalCount: 0, completedCount: 0 }),
+      );
     });
 
     it('should only resume a paused transfer', async () => {
@@ -208,6 +238,123 @@ describe(StorageTargetService.name, () => {
       mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Cancelled });
 
       await expect(sut.cancelTransfer('transfer-1')).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    const failureStub = {
+      id: 'item-1',
+      transferId: 'transfer-1',
+      itemKey: 'asset-1',
+      assetId: 'asset-1' as string | null,
+      remoteKey: null as string | null,
+      fileName: 'IMG_0001.jpg' as string | null,
+      size: 1024 as number | null,
+      attempts: 1,
+      error: 'Access Denied',
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
+    };
+
+    it('should clear recorded failures when resuming, since the new walk retries them', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Paused });
+      mocks.storageTarget.get.mockResolvedValue(targetStub);
+      mocks.storageTarget.updateTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Pending });
+
+      await sut.resumeTransfer('transfer-1');
+
+      expect(mocks.storageTarget.clearTransferFailures).toHaveBeenCalledWith('transfer-1');
+    });
+
+    it('should retry failures under the current run and take them off the failed count', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({
+        ...transferStub,
+        status: StorageTransferStatus.Failed,
+        runId: 'run-1',
+        failedCount: 2,
+      });
+      mocks.storageTarget.get.mockResolvedValue(targetStub);
+      mocks.storageTarget.getTransferFailuresForRetry.mockResolvedValue([
+        failureStub,
+        { ...failureStub, id: 'item-2', itemKey: 'asset-2', assetId: 'asset-2' },
+      ]);
+
+      await expect(sut.retryTransferFailures('transfer-1', {})).resolves.toEqual({ count: 2 });
+
+      expect(mocks.storageTarget.reopenTransferForRetry).toHaveBeenCalledWith('transfer-1', 2);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.StorageTargetOffloadAsset,
+          data: { transferId: 'transfer-1', runId: 'run-1', assetId: 'asset-1' },
+        },
+        {
+          name: JobName.StorageTargetOffloadAsset,
+          data: { transferId: 'transfer-1', runId: 'run-1', assetId: 'asset-2' },
+        },
+      ]);
+    });
+
+    it('should retry an import failure by its remote key', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({
+        ...transferStub,
+        direction: StorageTransferDirection.Import,
+        status: StorageTransferStatus.Completed,
+      });
+      mocks.storageTarget.get.mockResolvedValue(targetStub);
+      mocks.storageTarget.getTransferFailuresForRetry.mockResolvedValue([
+        { ...failureStub, itemKey: 'user-1/IMG_0002.jpg', assetId: null, remoteKey: 'user-1/IMG_0002.jpg', size: 42 },
+      ]);
+
+      await sut.retryTransferFailures('transfer-1', { itemIds: ['item-1'] });
+
+      expect(mocks.storageTarget.getTransferFailuresForRetry).toHaveBeenCalledWith('transfer-1', ['item-1']);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        {
+          name: JobName.StorageTargetImportObject,
+          data: { transferId: 'transfer-1', runId: undefined, remoteKey: 'user-1/IMG_0002.jpg', size: 42 },
+        },
+      ]);
+    });
+
+    it('should not retry the failures of a paused transfer', async () => {
+      // Resuming walks everything outstanding, failures included, so a retry on
+      // top would only race it.
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Paused });
+
+      await expect(sut.retryTransferFailures('transfer-1', {})).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.job.queueAll).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to remove a transfer that is still going', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue(transferStub);
+
+      await expect(sut.deleteTransfer('transfer-1')).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.storageTarget.deleteTransfers).not.toHaveBeenCalled();
+    });
+
+    it('should remove a finished transfer from the history', async () => {
+      mocks.storageTarget.getTransfer.mockResolvedValue({ ...transferStub, status: StorageTransferStatus.Completed });
+
+      await sut.deleteTransfer('transfer-1');
+
+      expect(mocks.storageTarget.deleteTransfers).toHaveBeenCalledWith(['transfer-1']);
+    });
+
+    it('should clear only finished transfers from the history', async () => {
+      mocks.storageTarget.get.mockResolvedValue(targetStub);
+      mocks.storageTarget.deleteTransfersByStatus.mockResolvedValue(3);
+
+      await expect(sut.clearTransferHistory('target-1')).resolves.toEqual({ count: 3 });
+
+      const [, statuses] = mocks.storageTarget.deleteTransfersByStatus.mock.calls[0];
+      expect(statuses).toEqual(
+        expect.arrayContaining([
+          StorageTransferStatus.Completed,
+          StorageTransferStatus.Failed,
+          StorageTransferStatus.Cancelled,
+        ]),
+      );
+      // Work still on the queue needs its transfer to report to.
+      expect(statuses).not.toContain(StorageTransferStatus.Paused);
+      expect(statuses).not.toContain(StorageTransferStatus.Running);
     });
 
     it('should report a transfer that does not exist', async () => {

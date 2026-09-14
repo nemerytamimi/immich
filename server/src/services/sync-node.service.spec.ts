@@ -305,7 +305,7 @@ describe(SyncNodeService.name, () => {
 
       await expect(sut.cancelPairingItems('pairing-1', {})).resolves.toEqual({ count: 7 });
 
-      expect(mocks.syncNode.deletePendingItems).toHaveBeenCalledWith('pairing-1', void 0);
+      expect(mocks.syncNode.deletePendingItems).toHaveBeenCalledWith('pairing-1', void 0, void 0);
       // Discarding a backlog must not re-queue it.
       expect(mocks.job.queue).not.toHaveBeenCalled();
     });
@@ -318,7 +318,16 @@ describe(SyncNodeService.name, () => {
         count: 3,
       });
 
-      expect(mocks.syncNode.deletePendingItems).toHaveBeenCalledWith('pairing-1', SyncDirection.Pull);
+      expect(mocks.syncNode.deletePendingItems).toHaveBeenCalledWith('pairing-1', SyncDirection.Pull, void 0);
+    });
+
+    it('should remove only the items asked for', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue(pairingStub);
+      mocks.syncNode.deletePendingItems.mockResolvedValue(1);
+
+      await expect(sut.cancelPairingItems('pairing-1', { itemIds: ['item-1'] })).resolves.toEqual({ count: 1 });
+
+      expect(mocks.syncNode.deletePendingItems).toHaveBeenCalledWith('pairing-1', void 0, ['item-1']);
     });
 
     it('should report a pairing that does not exist', async () => {
@@ -326,6 +335,29 @@ describe(SyncNodeService.name, () => {
 
       await expect(sut.cancelPairingItems('nope', {})).rejects.toBeInstanceOf(NotFoundException);
       expect(mocks.syncNode.deletePendingItems).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reconcilePairingMetadata', () => {
+    it('should compare every matched asset again, not only the ones that changed', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue(pairingStub);
+
+      await sut.reconcilePairingMetadata('pairing-1');
+
+      // Without clearing the marks, an asset unchanged since it was last compared
+      // would be skipped as already in step.
+      expect(mocks.syncNode.clearMetadataMarks).toHaveBeenCalledWith('pairing-1');
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: 'NodeSyncMetadataQueue',
+        data: { pairingId: 'pairing-1' },
+      });
+    });
+
+    it('should report a pairing that does not exist', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue(void 0);
+
+      await expect(sut.reconcilePairingMetadata('nope')).rejects.toBeInstanceOf(NotFoundException);
+      expect(mocks.job.queue).not.toHaveBeenCalled();
     });
   });
 

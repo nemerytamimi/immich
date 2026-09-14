@@ -7,7 +7,12 @@
   import { queueManager } from '$lib/managers/queue-manager.svelte';
   import { systemConfigManager } from '$lib/managers/system-config-manager.svelte';
   import { Route } from '$lib/route';
-  import { getSyncPairingActions, handleRetryStuckItem, handleRetryStuckItems } from '$lib/services/sync-node.service';
+  import {
+    getSyncPairingActions,
+    handleRemoveStuckItem,
+    handleRetryStuckItem,
+    handleRetryStuckItems,
+  } from '$lib/services/sync-node.service';
   import { locale } from '$lib/stores/preferences.store';
   import {
     getSyncPairing,
@@ -95,6 +100,12 @@
     }
   };
 
+  const removeOne = async (item: SyncPairingItemDto) => {
+    if (await handleRemoveStuckItem(pairing, item)) {
+      await refresh();
+    }
+  };
+
   onMount(() => {
     const stopListening = queueManager.listen();
     const interval = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
@@ -105,7 +116,7 @@
     };
   });
 
-  const { SyncNow, DiscardOutstanding, Unpair } = $derived(getSyncPairingActions($t, pairing));
+  const { SyncNow, ReconcileMetadata, DiscardOutstanding, Unpair } = $derived(getSyncPairingActions($t, pairing));
 
   // Items that have never failed. The rest of what is outstanding is either being
   // retried or has run out of attempts.
@@ -134,7 +145,7 @@
     { title: node.name },
     { title: pairing.remoteUserEmail },
   ]}
-  actions={[SyncNow, DiscardOutstanding, Unpair]}
+  actions={[SyncNow, ReconcileMetadata, DiscardOutstanding, Unpair]}
 >
   <Container size="large" center class="my-4">
     <div class="flex flex-col gap-6" in:fade={{ duration: 500 }}>
@@ -260,6 +271,7 @@
               maxAttempts={stuck.maxAttempts}
               nodeName={node.name}
               onRetry={(item) => void retryOne(item)}
+              onRemove={(item) => void removeOne(item)}
             />
             {#if stuck.total > stuck.items.length}
               <Text size="tiny" color="secondary" class="mt-2">

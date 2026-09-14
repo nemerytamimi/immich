@@ -108,7 +108,13 @@ describe(SyncEngineService.name, () => {
     mocks.syncNode.get.mockResolvedValue(nodeStub);
     mocks.syncNode.updatePairing.mockResolvedValue(pairingStub);
     mocks.syncNode.getChangedAssets.mockResolvedValue([]);
-    mocks.syncNode.getMappedRemoteIds.mockResolvedValue(new Set());
+    mocks.syncNode.getMappingsByRemoteIds.mockResolvedValue([]);
+    mocks.syncNode.upsertAssetMapping.mockResolvedValue(mappingStub);
+    mocks.syncNode.updateAssetMapping.mockResolvedValue(mappingStub);
+    mocks.syncNode.getAssetMetadata.mockResolvedValue(void 0);
+    mocks.syncNode.getAssetTagValues.mockResolvedValue([]);
+    mocks.nodeClient.getFaces.mockResolvedValue([]);
+    mocks.person.getFaces.mockResolvedValue([]);
     mocks.nodeClient.searchAssets.mockResolvedValue({ items: [], nextPage: null });
     mocks.nodeClient.updateAsset.mockResolvedValue(void 0);
     mocks.nodeClient.trashAssets.mockResolvedValue(void 0);
@@ -219,6 +225,8 @@ describe(SyncEngineService.name, () => {
       expect(mocks.syncNode.upsertAssetMapping).toHaveBeenCalledWith(
         expect.objectContaining({ remoteAssetId: 'remote-existing', origin: 'push-dedupe' }),
       );
+      // Two copies that each lived their own life are compared straight away.
+      expect(mocks.syncNode.getAssetMetadata).toHaveBeenCalledWith('asset-1');
     });
 
     it('should record a failed push instead of aborting the run', async () => {
@@ -277,20 +285,244 @@ describe(SyncEngineService.name, () => {
       expect(mocks.syncNode.markQueued).toHaveBeenCalledWith('pairing-1', 'push', []);
     });
 
-    it('should only queue remote assets it has never seen', async () => {
+    it('should queue unseen remote assets, and matched ones the peer changed since they were compared', async () => {
       mocks.syncNode.getPairing.mockResolvedValue({ ...pairingStub, pushEnabled: false });
       mocks.nodeClient.searchAssets.mockResolvedValue({
-        items: [{ id: 'remote-a' }, { id: 'remote-b' }],
+        items: [
+          { id: 'remote-unchanged', updatedAt: '2026-01-01T00:00:00.000Z' },
+          { id: 'remote-changed', updatedAt: '2026-03-01T00:00:00.000Z' },
+          { id: 'remote-new', updatedAt: '2026-03-01T00:00:00.000Z' },
+        ],
         nextPage: null,
       } as never);
-      // remote-a is already mapped, so only remote-b is new.
-      mocks.syncNode.getMappedRemoteIds.mockResolvedValue(new Set(['remote-a']));
+      mocks.syncNode.getMappingsByRemoteIds.mockResolvedValue([
+        { remoteAssetId: 'remote-unchanged', updatedAt: new Date('2026-02-01T00:00:00.000Z') },
+        { remoteAssetId: 'remote-changed', updatedAt: new Date('2026-02-01T00:00:00.000Z') },
+      ] as never);
 
       await sut.handlePair({ pairingId: 'pairing-1' });
 
       const pullJobs = mocks.job.queue.mock.calls.filter(([job]) => job.name === 'NodeSyncPullAsset');
-      expect(pullJobs).toHaveLength(1);
-      expect(pullJobs[0][0].data).toEqual({ pairingId: 'pairing-1', assetId: 'remote-b' });
+      expect(pullJobs.map(([job]) => job.data)).toEqual([
+        { pairingId: 'pairing-1', assetId: 'remote-changed' },
+        { pairingId: 'pairing-1', assetId: 'remote-new' },
+      ]);
+    });
+  });
+
+  describe('metadata reconciliation', () => {
+    const localMetadataStub = {
+      id: 'asset-1',
+      ownerId: 'user-1',
+      isFavorite: false,
+      visibility: AssetVisibility.Timeline,
+      fileCreatedAt: new Date('2026-03-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+      updateId: 'asset-update-2',
+      dateTimeOriginal: null as Date | null,
+      timeZone: null,
+      latitude: null,
+      longitude: null,
+      rating: null,
+      description: '',
+      exifUpdatedAt: new Date('2026-03-01T00:00:00.000Z'),
+    };
+
+    const remoteWithMetadata = {
+      id: 'remote-asset-1',
+      checksum: 'abc',
+      originalFileName: 'IMG_0001.jpg',
+      fileCreatedAt: '2019-07-14T10:00:00.000Z',
+      fileModifiedAt: '2019-07-14T10:00:00.000Z',
+      isFavorite: true,
+      isArchived: false,
+      visibility: 'timeline',
+      type: 'IMAGE',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      exifInfo: {
+        dateTimeOriginal: '2019-07-14T10:00:00.000Z' as string | null,
+        timeZone: 'UTC',
+        latitude: 31.77,
+        longitude: 35.21,
+        rating: 5,
+        description: 'Old city' as string | null,
+      },
+      tags: [{ id: 'remote-tag-1', value: 'travel' }],
+    };
+
+    const faceBox = { imageWidth: 1000, imageHeight: 1000, boundingBoxX1: 100, boundingBoxY1: 100 };
+
+    beforeEach(() => {
+      // The asset changed since the mapping last compared it, so the push compares metadata.
+      mocks.syncNode.getAssetsByIds.mockResolvedValue([{ ...assetStub, updateId: 'asset-update-2' }] as never);
+      mocks.syncNode.getAssetMapping.mockResolvedValue(mappingStub);
+      mocks.syncNode.getAssetMetadata.mockResolvedValue(localMetadataStub as never);
+      mocks.nodeClient.getRemoteAsset.mockResolvedValue(remoteWithMetadata);
+      mocks.tag.upsertValue.mockResolvedValue({ id: 'tag-1', value: 'travel' } as never);
+      mocks.tag.upsertAssetIds.mockResolvedValue([]);
+    });
+
+    it('should restore what this node lost from the peer', async () => {
+      await expect(sut.handlePushAsset({ pairingId: 'pairing-1', assetId: 'asset-1' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith({
+        exif: expect.objectContaining({
+          assetId: 'asset-1',
+          dateTimeOriginal: new Date('2019-07-14T10:00:00.000Z'),
+          latitude: 31.77,
+          longitude: 35.21,
+          rating: 5,
+          description: 'Old city',
+          // Locked, so re-reading the file does not put back the value that was missing.
+          lockedProperties: expect.arrayContaining(['dateTimeOriginal', 'description']),
+        }),
+        lockedPropertiesBehavior: 'append',
+      });
+      expect(mocks.asset.update).toHaveBeenCalledWith(expect.objectContaining({ id: 'asset-1', isFavorite: true }));
+      expect(mocks.tag.upsertAssetIds).toHaveBeenCalledWith([{ tagId: 'tag-1', assetId: 'asset-1' }]);
+      expect(mocks.job.queue).toHaveBeenCalledWith({ name: 'SidecarWrite', data: { id: 'asset-1' } });
+      // The peer already had all of it, so nothing goes back.
+      expect(mocks.nodeClient.updateAsset).not.toHaveBeenCalled();
+    });
+
+    it('should fill in on the peer what only this node has', async () => {
+      mocks.syncNode.getAssetMetadata.mockResolvedValue({
+        ...localMetadataStub,
+        dateTimeOriginal: new Date('2019-07-14T10:00:00.000Z'),
+        description: 'Only here',
+      } as never);
+      mocks.nodeClient.getRemoteAsset.mockResolvedValue({
+        ...remoteWithMetadata,
+        exifInfo: { ...remoteWithMetadata.exifInfo, description: null },
+      });
+
+      await sut.handlePushAsset({ pairingId: 'pairing-1', assetId: 'asset-1' });
+
+      expect(mocks.nodeClient.updateAsset).toHaveBeenCalledWith(
+        expect.anything(),
+        'remote-asset-1',
+        expect.objectContaining({ description: 'Only here' }),
+      );
+    });
+
+    it('should not write to the peer when the pairing does not push', async () => {
+      mocks.syncNode.getPairing.mockResolvedValue({ ...pairingStub, pushEnabled: false });
+      mocks.syncNode.getAssetMetadata.mockResolvedValue({
+        ...localMetadataStub,
+        dateTimeOriginal: new Date('2019-07-14T10:00:00.000Z'),
+        description: 'Only here',
+      } as never);
+      mocks.nodeClient.getRemoteAsset.mockResolvedValue({
+        ...remoteWithMetadata,
+        exifInfo: { ...remoteWithMetadata.exifInfo, description: null },
+      });
+
+      await sut.handlePushAsset({ pairingId: 'pairing-1', assetId: 'asset-1' });
+
+      expect(mocks.nodeClient.updateAsset).not.toHaveBeenCalled();
+      expect(mocks.nodeClient.tagAssets).not.toHaveBeenCalled();
+    });
+
+    it('should remember the local version it compared, so an unchanged asset is not compared again', async () => {
+      mocks.syncNode.getAssetMetadata
+        .mockResolvedValueOnce(localMetadataStub as never)
+        .mockResolvedValueOnce({ ...localMetadataStub, updateId: 'asset-update-3' } as never);
+
+      await sut.handlePushAsset({ pairingId: 'pairing-1', assetId: 'asset-1' });
+
+      expect(mocks.syncNode.updateAssetMapping).toHaveBeenCalledWith('mapping-1', {
+        metadataUpdateId: 'asset-update-3',
+        updatedAt: expect.any(Date),
+      });
+    });
+
+    it('should not compare an asset that has not changed since it was last compared', async () => {
+      mocks.syncNode.getAssetsByIds.mockResolvedValue([assetStub] as never);
+
+      await sut.handlePushAsset({ pairingId: 'pairing-1', assetId: 'asset-1' });
+
+      expect(mocks.nodeClient.getRemoteAsset).not.toHaveBeenCalled();
+    });
+
+    it('should name a face here that only the peer has named', async () => {
+      mocks.person.getFaces.mockResolvedValue([
+        {
+          ...faceBox,
+          id: 'local-face',
+          boundingBoxX2: 300,
+          boundingBoxY2: 300,
+          personGroupId: 'local-cluster',
+          person: { name: '' },
+        },
+      ] as never);
+      mocks.nodeClient.getFaces.mockResolvedValue([
+        {
+          id: 'remote-face',
+          imageWidth: 2000,
+          imageHeight: 2000,
+          boundingBoxX1: 200,
+          boundingBoxY1: 200,
+          boundingBoxX2: 600,
+          boundingBoxY2: 600,
+          person: { id: 'remote-sara', name: 'Sara' },
+        },
+      ]);
+      mocks.person.getByName.mockResolvedValue([]);
+      mocks.person.update.mockResolvedValue({} as never);
+
+      await sut.handlePushAsset({ pairingId: 'pairing-1', assetId: 'asset-1' });
+
+      // The face's unnamed cluster is named, so the rest of the cluster comes along.
+      expect(mocks.person.update).toHaveBeenCalledWith({
+        ownerId: 'user-1',
+        personGroupId: 'local-cluster',
+        name: 'Sara',
+      });
+    });
+
+    it('should reuse a person the peer already has by that exact name', async () => {
+      mocks.person.getFaces.mockResolvedValue([
+        {
+          ...faceBox,
+          id: 'local-face',
+          boundingBoxX2: 300,
+          boundingBoxY2: 300,
+          personGroupId: 'local-omar',
+          person: { name: 'Omar' },
+        },
+      ] as never);
+      mocks.nodeClient.getFaces.mockResolvedValue([
+        { id: 'remote-face', ...faceBox, boundingBoxX2: 300, boundingBoxY2: 300, person: null },
+      ]);
+      // The peer's person search is fuzzy, so a near miss comes back alongside the real match.
+      mocks.nodeClient.searchPeople.mockResolvedValue([
+        { id: 'remote-omari', name: 'Omari' },
+        { id: 'remote-omar', name: 'omar' },
+      ]);
+
+      await sut.handlePushAsset({ pairingId: 'pairing-1', assetId: 'asset-1' });
+
+      expect(mocks.nodeClient.reassignFace).toHaveBeenCalledWith(expect.anything(), 'remote-omar', 'remote-face');
+      expect(mocks.nodeClient.createPerson).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleMetadataQueue', () => {
+    it('should send every matched asset through the push job so its metadata is compared', async () => {
+      mocks.syncNode.getAssetMappingPage.mockResolvedValueOnce([
+        { id: 'mapping-1', localAssetId: 'asset-1' },
+        { id: 'mapping-2', localAssetId: 'asset-2' },
+      ]);
+
+      await expect(sut.handleMetadataQueue({ pairingId: 'pairing-1' })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.syncNode.markQueued).toHaveBeenCalledWith('pairing-1', 'push', ['asset-1', 'asset-2']);
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([
+        { name: 'NodeSyncPushAsset', data: { pairingId: 'pairing-1', assetId: 'asset-1' } },
+        { name: 'NodeSyncPushAsset', data: { pairingId: 'pairing-1', assetId: 'asset-2' } },
+      ]);
     });
   });
 
@@ -335,14 +567,16 @@ describe(SyncEngineService.name, () => {
   });
 
   describe('handlePullAsset', () => {
-    it('should skip a remote asset that is already mapped', async () => {
+    it('should compare metadata rather than download a remote asset already here', async () => {
       mocks.syncNode.getMappingByRemoteId.mockResolvedValue(mappingStub);
 
       await expect(sut.handlePullAsset({ pairingId: 'pairing-1', assetId: 'remote-1' })).resolves.toBe(
-        JobStatus.Skipped,
+        JobStatus.Success,
       );
 
       expect(mocks.nodeClient.downloadAsset).not.toHaveBeenCalled();
+      expect(mocks.syncNode.getAssetMetadata).toHaveBeenCalledWith('asset-1');
+      expect(mocks.syncNode.markSucceeded).toHaveBeenCalledWith('pairing-1', 'pull', 'remote-1');
     });
 
     it('should stop pulling once the pairing is paused', async () => {
