@@ -1,15 +1,15 @@
 import { Selectable } from 'kysely';
 import { createZodDto } from 'nestjs-zod';
+import z from 'zod';
 import {
   SyncDirectionSchema,
   SyncItemFilter,
   SyncItemFilterSchema,
   SyncItemStatusSchema,
   SyncNodeStatusSchema,
-} from 'src/enum';
-import { SyncNodeItemTable, SyncNodeTable, SyncNodeUserTable } from 'src/schema/tables/sync-node.table';
-import { asDateTimeString } from 'src/utils/date';
-import z from 'zod';
+} from 'src/enum.js';
+import { SyncNodeItemTable, SyncNodeTable, SyncNodeUserTable } from 'src/schema/tables/sync-node.table.js';
+import { asDateTimeString } from 'src/utils/date.js';
 
 const SyncNodeCreateSchema = z
   .object({

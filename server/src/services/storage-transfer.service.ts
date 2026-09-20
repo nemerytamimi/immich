@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { basename, dirname, join, relative } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { StorageCore } from 'src/cores/storage.core';
-import { OnJob } from 'src/decorators';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnJob } from 'src/decorators.js';
 import {
   AssetFileType,
   AssetVisibility,
@@ -14,21 +14,21 @@ import {
   STORAGE_TRANSFER_STOPPED,
   StorageFolder,
   StorageTransferStatus,
-} from 'src/enum';
-import { StorageTargetRef } from 'src/repositories/remote-storage.repository';
-import { describeRemoteError } from 'src/repositories/remote-storage/driver';
-import { BaseService } from 'src/services/base.service';
+} from 'src/enum.js';
+import { describeRemoteError } from 'src/repositories/remote-storage/driver.js';
+import { StorageTargetRef } from 'src/repositories/remote-storage.repository.js';
+import { BaseService } from 'src/services/base.service.js';
 import {
-  IBaseJob,
-  IStorageTargetObjectDeleteJob,
-  IStorageTransferAssetJob,
-  IStorageTransferJob,
-  IStorageTransferObjectJob,
+  type IBaseJob,
+  type IStorageTargetObjectDeleteJob,
+  type IStorageTransferAssetJob,
+  type IStorageTransferJob,
+  type IStorageTransferObjectJob,
   StorageTransferScope,
-} from 'src/types';
-import { getFilenameExtension } from 'src/utils/file';
-import { mimeTypes } from 'src/utils/mime-types';
-import { getRemoteCachePath } from 'src/utils/remote-cache';
+} from 'src/types.js';
+import { getFilenameExtension } from 'src/utils/file.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
+import { getRemoteCachePath } from 'src/utils/remote-cache.js';
 
 /** How long a cached remote original survives without being read. */
 const REMOTE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;

@@ -83,9 +83,7 @@
 
   /** Only a transfer with nothing left on the queue can leave the history. */
   const isFinished = (status: StorageTransferStatus) =>
-    status === StorageTransferStatus.Completed ||
-    status === StorageTransferStatus.Failed ||
-    status === StorageTransferStatus.Cancelled;
+    [StorageTransferStatus.Completed, StorageTransferStatus.Failed, StorageTransferStatus.Cancelled].includes(status);
 
   const hasFinished = $derived(transfers.some(({ status }) => isFinished(status)));
 

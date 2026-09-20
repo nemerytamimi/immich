@@ -5,9 +5,9 @@ import {
   StorageTransferDirection,
   StorageTransferScopeType,
   StorageTransferStatus,
-} from 'src/enum';
-import { StorageTargetService } from 'src/services/storage-target.service';
-import { newTestService, ServiceMocks } from 'test/utils';
+} from 'src/enum.js';
+import { StorageTargetService } from 'src/services/storage-target.service.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 /** What a client sends: one flat shape regardless of kind. */
 const s3ConfigDto = {

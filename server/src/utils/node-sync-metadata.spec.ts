@@ -1,12 +1,12 @@
-import { AssetVisibility } from 'src/enum';
+import { AssetVisibility } from 'src/enum.js';
 import {
+  SyncedFace,
+  SyncedMetadata,
   pickMetadataWinner,
   planFaceNames,
   planMetadataSync,
-  SyncedFace,
-  SyncedMetadata,
   toSyncedFace,
-} from 'src/utils/node-sync-metadata';
+} from 'src/utils/node-sync-metadata.js';
 
 const empty: SyncedMetadata = {
   createdAt: new Date('2020-06-01T12:00:00.000Z'),

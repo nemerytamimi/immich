@@ -1,9 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { NODE_SYNC_MAX_ATTEMPTS, serverVersion } from 'src/constants';
+import { NODE_SYNC_MAX_ATTEMPTS, serverVersion } from 'src/constants.js';
 import {
-  mapSyncNode,
-  mapSyncPairing,
-  mapSyncPairingItem,
   SyncNodeCreateDto,
   SyncNodeRemoteUserDto,
   SyncNodeResponseDto,
@@ -17,10 +14,13 @@ import {
   SyncPairingRetryDto,
   SyncPairingRetryResponseDto,
   SyncPairingUpdateDto,
-} from 'src/dtos/sync-node.dto';
-import { JobName, SyncDirection, SyncItemFilter, SyncNodeStatus } from 'src/enum';
-import { NodeClientError, NodeCredentials } from 'src/repositories/node-client.repository';
-import { BaseService } from 'src/services/base.service';
+  mapSyncNode,
+  mapSyncPairing,
+  mapSyncPairingItem,
+} from 'src/dtos/sync-node.dto.js';
+import { JobName, SyncDirection, SyncItemFilter, SyncNodeStatus } from 'src/enum.js';
+import { NodeClientError, NodeCredentials } from 'src/repositories/node-client.repository.js';
+import { BaseService } from 'src/services/base.service.js';
 
 /**
  * Permissions the peer's API key must carry for a sync to be able to do its job.

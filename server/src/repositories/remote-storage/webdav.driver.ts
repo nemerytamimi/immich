@@ -1,14 +1,14 @@
-import { Readable } from 'node:stream';
-import { StorageTargetKind } from 'src/enum';
+import { Readable, Writable } from 'node:stream';
+import { AuthType, FileStat, WebDAVClient, createClient } from 'webdav';
+import { StorageTargetKind } from 'src/enum.js';
 import {
-  assertSafeKey,
   DriverInput,
-  joinKey,
   RemoteObject,
   RemoteStorageDriver,
   RemoteUploadOptions,
-} from 'src/repositories/remote-storage/driver';
-import { AuthType, createClient, FileStat, WebDAVClient } from 'webdav';
+  assertSafeKey,
+  joinKey,
+} from 'src/repositories/remote-storage/driver.js';
 
 const LOCK_RETRIES = 5;
 const LOCK_RETRY_DELAY_MS = 250;
@@ -156,7 +156,9 @@ export class WebDavDriver implements RemoteStorageDriver {
   }
 
   createReadStream(key: string): Promise<Readable> {
-    return Promise.resolve(this.client.createReadStream(this.fullPath(key)));
+    // Since 5.11 webdav types its streams structurally so they also describe a browser
+    // stream; on Node the client still hands back the real thing.
+    return Promise.resolve(this.client.createReadStream(this.fullPath(key)) as Readable);
   }
 
   async upload(key: string, stream: Readable, options?: RemoteUploadOptions): Promise<RemoteObject> {
@@ -167,7 +169,7 @@ export class WebDavDriver implements RemoteStorageDriver {
     await new Promise<void>((resolve, reject) => {
       // The write stream is a PassThrough feeding a PUT; it never emits 'finish'
       // for the request itself, so completion is only observable via the callback.
-      const writeStream = this.client.createWriteStream(path, { overwrite: true }, () => resolve());
+      const writeStream = this.client.createWriteStream(path, { overwrite: true }, () => resolve()) as Writable;
       writeStream.on('error', reject);
       stream.on('error', reject);
       stream.pipe(writeStream);

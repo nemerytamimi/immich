@@ -1,9 +1,9 @@
 import { Reflector } from '@nestjs/core';
-import { JobConfig } from 'src/decorators';
-import { JobName, MetadataKey } from 'src/enum';
-import { services } from 'src/services';
-import { getMethodNames } from 'src/utils/misc';
 import { describe, expect, it } from 'vitest';
+import { JobConfig } from 'src/decorators.js';
+import { JobName, MetadataKey } from 'src/enum.js';
+import { services } from 'src/services/index.js';
+import { getMethodNames } from 'src/utils/misc.js';
 
 /**
  * The server refuses to boot when a JobName has no @OnJob handler, which is a

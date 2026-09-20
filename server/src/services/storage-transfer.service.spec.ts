@@ -1,14 +1,14 @@
 import { Readable, Writable } from 'node:stream';
-import { StorageCore } from 'src/cores/storage.core';
+import { StorageCore } from 'src/cores/storage.core.js';
 import {
   JobStatus,
   StorageTargetKind,
   StorageTransferDirection,
   StorageTransferScopeType,
   StorageTransferStatus,
-} from 'src/enum';
-import { StorageTransferService } from 'src/services/storage-transfer.service';
-import { newTestService, ServiceMocks } from 'test/utils';
+} from 'src/enum.js';
+import { StorageTransferService } from 'src/services/storage-transfer.service.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const targetStub = {
   id: 'target-1',

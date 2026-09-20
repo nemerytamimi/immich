@@ -1,12 +1,12 @@
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { StorageCore } from 'src/cores/storage.core';
-import { StorageFolder } from 'src/enum';
-import { LoggingRepository } from 'src/repositories/logging.repository';
-import { RemoteStorageRepository, StorageTargetRef } from 'src/repositories/remote-storage.repository';
-import { StorageTargetRepository } from 'src/repositories/storage-target.repository';
-import { StorageRepository } from 'src/repositories/storage.repository';
-import { getFilenameExtension } from 'src/utils/file';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { StorageFolder } from 'src/enum.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
+import { RemoteStorageRepository, StorageTargetRef } from 'src/repositories/remote-storage.repository.js';
+import { StorageTargetRepository } from 'src/repositories/storage-target.repository.js';
+import { StorageRepository } from 'src/repositories/storage.repository.js';
+import { getFilenameExtension } from 'src/utils/file.js';
 
 export type RemoteCacheDeps = {
   logger: LoggingRepository;

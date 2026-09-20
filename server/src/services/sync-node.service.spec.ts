@@ -1,9 +1,9 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { NODE_SYNC_MAX_ATTEMPTS, serverVersion } from 'src/constants';
-import { SyncDirection, SyncItemFilter, SyncItemStatus, SyncNodeStatus } from 'src/enum';
-import { NodeClientError } from 'src/repositories/node-client.repository';
-import { SyncNodeService } from 'src/services/sync-node.service';
-import { newTestService, ServiceMocks } from 'test/utils';
+import { NODE_SYNC_MAX_ATTEMPTS, serverVersion } from 'src/constants.js';
+import { SyncDirection, SyncItemFilter, SyncItemStatus, SyncNodeStatus } from 'src/enum.js';
+import { NodeClientError } from 'src/repositories/node-client.repository.js';
+import { SyncNodeService } from 'src/services/sync-node.service.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const nodeStub = {
   id: 'node-1',

@@ -3,15 +3,15 @@ import fs from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { StorageTargetKind } from 'src/enum';
+import { StorageTargetKind } from 'src/enum.js';
 import {
-  assertSafeKey,
   DriverInput,
-  joinKey,
   RemoteObject,
   RemoteStorageDriver,
   RemoteUploadOptions,
-} from 'src/repositories/remote-storage/driver';
+  assertSafeKey,
+  joinKey,
+} from 'src/repositories/remote-storage/driver.js';
 
 /**
  * A local or network-mounted directory used as an export/import destination.

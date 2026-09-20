@@ -1,9 +1,9 @@
 import { Readable, Writable } from 'node:stream';
-import { NODE_SYNC_MAX_ATTEMPTS } from 'src/constants';
-import { StorageCore } from 'src/cores/storage.core';
-import { AssetVisibility, JobStatus, SyncNodeStatus } from 'src/enum';
-import { SyncEngineService } from 'src/services/sync-engine.service';
-import { newTestService, ServiceMocks } from 'test/utils';
+import { NODE_SYNC_MAX_ATTEMPTS } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { AssetVisibility, JobStatus, SyncNodeStatus } from 'src/enum.js';
+import { SyncEngineService } from 'src/services/sync-engine.service.js';
+import { ServiceMocks, newTestService } from 'test/utils.js';
 
 const nodeStub = {
   id: 'node-1',

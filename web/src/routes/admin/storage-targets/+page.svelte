@@ -53,7 +53,7 @@
 
   // A poll speaks only for the targets it was made against, so adding or removing
   // one falls back to what the page loaded until the next tick lands.
-  const transfers = $derived(polled && targets.every(({ id }) => id in polled!) ? polled : data.transfers);
+  const transfers = $derived(polled && targets.every(({ id }) => Object.hasOwn(polled!, id)) ? polled : data.transfers);
 
   /** Only pending and running transfers have counters that move. */
   const isMoving = $derived(

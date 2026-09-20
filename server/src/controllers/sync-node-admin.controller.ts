@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Endpoint, HistoryBuilder } from 'src/decorators';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import {
   SyncNodeCreateDto,
   SyncNodeRemoteUserDto,
@@ -15,11 +15,11 @@ import {
   SyncPairingRetryDto,
   SyncPairingRetryResponseDto,
   SyncPairingUpdateDto,
-} from 'src/dtos/sync-node.dto';
-import { ApiTag, Permission } from 'src/enum';
-import { Authenticated } from 'src/middleware/auth.guard';
-import { SyncNodeService } from 'src/services/sync-node.service';
-import { UUIDParamDto } from 'src/validation';
+} from 'src/dtos/sync-node.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Authenticated } from 'src/middleware/auth.guard.js';
+import { SyncNodeService } from 'src/services/sync-node.service.js';
+import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.SyncNodes)
 @Controller('admin/sync-nodes')

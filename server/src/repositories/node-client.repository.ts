@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { openAsBlob } from 'node:fs';
 import { Readable } from 'node:stream';
-import { LoggingRepository } from 'src/repositories/logging.repository';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 
 export type NodeCredentials = {
   url: string;

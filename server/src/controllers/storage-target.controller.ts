@@ -1,10 +1,10 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Endpoint, HistoryBuilder } from 'src/decorators';
-import { StorageTargetResponseDto } from 'src/dtos/storage-target.dto';
-import { ApiTag, Permission } from 'src/enum';
-import { Authenticated } from 'src/middleware/auth.guard';
-import { StorageTargetService } from 'src/services/storage-target.service';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { StorageTargetResponseDto } from 'src/dtos/storage-target.dto.js';
+import { ApiTag, Permission } from 'src/enum.js';
+import { Authenticated } from 'src/middleware/auth.guard.js';
+import { StorageTargetService } from 'src/services/storage-target.service.js';
 
 /**
  * The non-admin half of storage targets. Offloading is a user-level action, so a

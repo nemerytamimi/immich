@@ -1,11 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { AssetOffloadDto } from 'src/dtos/asset.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
+import { AssetOffloadDto } from 'src/dtos/asset.dto.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
 import {
-  mapStorageTarget,
-  mapStorageTransfer,
-  mapStorageTransferItem,
   StorageTargetConfigDto,
   StorageTargetCreateDto,
   StorageTargetResponseDto,
@@ -19,7 +16,10 @@ import {
   StorageTransferResponseDto,
   StorageTransferRetryDto,
   StorageTransferScopeDto,
-} from 'src/dtos/storage-target.dto';
+  mapStorageTarget,
+  mapStorageTransfer,
+  mapStorageTransferItem,
+} from 'src/dtos/storage-target.dto.js';
 import {
   JobName,
   Permission,
@@ -29,9 +29,9 @@ import {
   StorageTransferDirection,
   StorageTransferScopeType,
   StorageTransferStatus,
-} from 'src/enum';
-import { BaseService } from 'src/services/base.service';
-import { JobItem, StorageTargetConfig, StorageTargetSecret, StorageTransferScope } from 'src/types';
+} from 'src/enum.js';
+import { BaseService } from 'src/services/base.service.js';
+import { JobItem, StorageTargetConfig, StorageTargetSecret, StorageTransferScope } from 'src/types.js';
 
 const QUEUE_JOB_BY_DIRECTION = {
   [StorageTransferDirection.Export]: JobName.StorageTargetExportQueue,

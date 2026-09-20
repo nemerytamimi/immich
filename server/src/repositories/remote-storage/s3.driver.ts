@@ -7,16 +7,16 @@ import {
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { Readable } from 'node:stream';
-import { StorageTargetKind } from 'src/enum';
+import { StorageTargetKind } from 'src/enum.js';
 import {
-  assertSafeKey,
-  describeRemoteError,
   DriverInput,
-  joinKey,
   RemoteObject,
   RemoteStorageDriver,
   RemoteUploadOptions,
-} from 'src/repositories/remote-storage/driver';
+  assertSafeKey,
+  describeRemoteError,
+  joinKey,
+} from 'src/repositories/remote-storage/driver.js';
 
 const LIST_PAGE_SIZE = 1000;
 

@@ -1,4 +1,4 @@
-import { describeRemoteError } from 'src/repositories/remote-storage/driver';
+import { describeRemoteError } from 'src/repositories/remote-storage/driver.js';
 
 describe('describeRemoteError', () => {
   it('should keep a service error name, which is the whole diagnosis', () => {

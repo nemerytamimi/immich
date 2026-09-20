@@ -1,7 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
-import { Endpoint, HistoryBuilder } from 'src/decorators';
-import { AssetResponseDto } from 'src/dtos/asset-response.dto';
+import type { AuthDto } from 'src/dtos/auth.dto.js';
+import { Endpoint, HistoryBuilder } from 'src/decorators.js';
+import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import {
   AssetBulkDeleteDto,
   AssetBulkUpdateDto,
@@ -17,16 +18,15 @@ import {
   AssetStatsDto,
   AssetStatsResponseDto,
   UpdateAssetDto,
-} from 'src/dtos/asset.dto';
-import { AuthDto } from 'src/dtos/auth.dto';
-import { AssetEditsCreateDto, AssetEditsResponseDto } from 'src/dtos/editing.dto';
-import { AssetOcrResponseDto } from 'src/dtos/ocr.dto';
-import { StorageTransferResponseDto } from 'src/dtos/storage-target.dto';
-import { ApiTag, Permission, RouteKey } from 'src/enum';
-import { Auth, Authenticated } from 'src/middleware/auth.guard';
-import { AssetService } from 'src/services/asset.service';
-import { StorageTargetService } from 'src/services/storage-target.service';
-import { UUIDParamDto } from 'src/validation';
+} from 'src/dtos/asset.dto.js';
+import { AssetEditsCreateDto, AssetEditsResponseDto } from 'src/dtos/editing.dto.js';
+import { AssetOcrResponseDto } from 'src/dtos/ocr.dto.js';
+import { StorageTransferResponseDto } from 'src/dtos/storage-target.dto.js';
+import { ApiTag, Permission, RouteKey } from 'src/enum.js';
+import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
+import { AssetService } from 'src/services/asset.service.js';
+import { StorageTargetService } from 'src/services/storage-target.service.js';
+import { UUIDParamDto } from 'src/validation.js';
 
 @ApiTags(ApiTag.Assets)
 @Controller(RouteKey.Asset)

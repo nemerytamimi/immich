@@ -1,5 +1,6 @@
 import { Selectable } from 'kysely';
 import { createZodDto } from 'nestjs-zod';
+import z from 'zod';
 import {
   StorageTargetKind,
   StorageTargetKindSchema,
@@ -7,15 +8,14 @@ import {
   StorageTransferScopeType,
   StorageTransferScopeTypeSchema,
   StorageTransferStatusSchema,
-} from 'src/enum';
+} from 'src/enum.js';
 import {
   StorageTargetTable,
   StorageTargetTransferItemTable,
   StorageTargetTransferTable,
-} from 'src/schema/tables/storage-target.table';
-import { StorageTargetConfig, StorageTargetSecret } from 'src/types';
-import { asDateTimeString } from 'src/utils/date';
-import z from 'zod';
+} from 'src/schema/tables/storage-target.table.js';
+import { StorageTargetConfig, StorageTargetSecret } from 'src/types.js';
+import { asDateTimeString } from 'src/utils/date.js';
 
 // Connection details are a flat bag rather than a discriminated union: the union
 // generates one anonymous single-value enum per branch in every client SDK, which

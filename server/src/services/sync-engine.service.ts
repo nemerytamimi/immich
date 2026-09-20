@@ -4,9 +4,11 @@ import { DateTime } from 'luxon';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { NODE_SYNC_MAX_ATTEMPTS } from 'src/constants';
-import { StorageCore } from 'src/cores/storage.core';
-import { OnEvent, OnJob } from 'src/decorators';
+import type { ArgOf } from 'src/repositories/event.repository.js';
+import type { INodeSyncAssetJob, INodeSyncPairJob } from 'src/types.js';
+import { NODE_SYNC_MAX_ATTEMPTS } from 'src/constants.js';
+import { StorageCore } from 'src/cores/storage.core.js';
+import { OnEvent, OnJob } from 'src/decorators.js';
 import {
   AssetVisibility,
   ChecksumAlgorithm,
@@ -17,28 +19,26 @@ import {
   QueueName,
   StorageFolder,
   SyncDirection,
-} from 'src/enum';
-import { ArgOf } from 'src/repositories/event.repository';
-import { NodeCredentials, RemoteAsset } from 'src/repositories/node-client.repository';
-import { AssetExifTable } from 'src/schema/tables/asset-exif.table';
-import { BaseService } from 'src/services/base.service';
-import { INodeSyncAssetJob, INodeSyncPairJob } from 'src/types';
-import { updateLockedColumns } from 'src/utils/database';
-import { getFilenameExtension } from 'src/utils/file';
-import { mimeTypes } from 'src/utils/mime-types';
-import { handlePromiseError } from 'src/utils/misc';
+} from 'src/enum.js';
+import { NodeCredentials, RemoteAsset } from 'src/repositories/node-client.repository.js';
+import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
+import { BaseService } from 'src/services/base.service.js';
+import { updateLockedColumns } from 'src/utils/database.js';
+import { getFilenameExtension } from 'src/utils/file.js';
+import { mimeTypes } from 'src/utils/mime-types.js';
+import { handlePromiseError } from 'src/utils/misc.js';
 import {
   FaceNaming,
-  hasMetadataChanges,
   MetadataChanges,
-  planFaceNames,
-  planMetadataSync,
   SyncedFace,
   SyncedMetadata,
+  hasMetadataChanges,
+  planFaceNames,
+  planMetadataSync,
   toSyncedFace,
-} from 'src/utils/node-sync-metadata';
-import { getRemoteCachePath } from 'src/utils/remote-cache';
-import { upsertTags } from 'src/utils/tag';
+} from 'src/utils/node-sync-metadata.js';
+import { getRemoteCachePath } from 'src/utils/remote-cache.js';
+import { upsertTags } from 'src/utils/tag.js';
 
 /** How many local changes one pair run walks through before stopping. */
 const PUSH_PAGE_SIZE = 500;

@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, SelectQueryBuilder, Updateable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { AssetFileType, AssetVisibility, StorageTransferScopeType, StorageTransferStatus } from 'src/enum';
-import { DB } from 'src/schema';
+import type { StorageTransferScope } from 'src/types.js';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AssetFileType, AssetVisibility, StorageTransferScopeType, StorageTransferStatus } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
 import {
   StorageTargetObjectTable,
   StorageTargetTable,
   StorageTargetTransferTable,
-} from 'src/schema/tables/storage-target.table';
-import { StorageTransferScope } from 'src/types';
+} from 'src/schema/tables/storage-target.table.js';
 
 @Injectable()
 export class StorageTargetRepository {

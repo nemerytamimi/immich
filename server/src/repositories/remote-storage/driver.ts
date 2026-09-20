@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import { StorageTargetConfig, StorageTargetSecret } from 'src/types';
+import { StorageTargetConfig, StorageTargetSecret } from 'src/types.js';
 
 export interface RemoteObject {
   key: string;

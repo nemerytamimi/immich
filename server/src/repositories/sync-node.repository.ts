@@ -1,15 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { Insertable, Kysely, Updateable } from 'kysely';
 import { InjectKysely } from 'nestjs-kysely';
-import { DummyValue, GenerateSql } from 'src/decorators';
-import { AlbumUserRole, AssetVisibility, SyncDirection, SyncItemFilter, SyncItemStatus } from 'src/enum';
-import { DB } from 'src/schema';
+import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { AlbumUserRole, AssetVisibility, SyncDirection, SyncItemFilter, SyncItemStatus } from 'src/enum.js';
+import { DB } from 'src/schema/index.js';
 import {
   SyncNodeAlbumTable,
   SyncNodeAssetTable,
   SyncNodeTable,
   SyncNodeUserTable,
-} from 'src/schema/tables/sync-node.table';
+} from 'src/schema/tables/sync-node.table.js';
 
 @Injectable()
 export class SyncNodeRepository {

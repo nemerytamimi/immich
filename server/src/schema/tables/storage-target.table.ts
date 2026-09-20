@@ -2,18 +2,18 @@ import {
   Column,
   CreateDateColumn,
   ForeignKeyColumn,
-  Generated,
+  type Generated,
   PrimaryGeneratedColumn,
   Table,
-  Timestamp,
+  type Timestamp,
   Unique,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { UpdatedAtTrigger, UpdateIdColumn } from 'src/decorators';
-import { StorageTargetKind, StorageTransferDirection, StorageTransferStatus } from 'src/enum';
-import { AssetTable } from 'src/schema/tables/asset.table';
-import { UserTable } from 'src/schema/tables/user.table';
-import { StorageTargetConfig, StorageTargetSecret, StorageTransferScope } from 'src/types';
+import type { StorageTargetConfig, StorageTargetSecret, StorageTransferScope } from 'src/types.js';
+import { UpdateIdColumn, UpdatedAtTrigger } from 'src/decorators.js';
+import { StorageTargetKind, StorageTransferDirection, StorageTransferStatus } from 'src/enum.js';
+import { AssetTable } from 'src/schema/tables/asset.table.js';
+import { UserTable } from 'src/schema/tables/user.table.js';
 
 @Table('storage_target')
 @UpdatedAtTrigger('storage_target_updatedAt')

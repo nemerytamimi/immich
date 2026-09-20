@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { Readable } from 'node:stream';
-import { StorageTargetKind } from 'src/enum';
-import { LoggingRepository } from 'src/repositories/logging.repository';
+import { StorageTargetKind } from 'src/enum.js';
+import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import {
   DriverInput,
   RemoteObject,
   RemoteStorageDriver,
   RemoteUploadOptions,
-} from 'src/repositories/remote-storage/driver';
-import { LocalDriver } from 'src/repositories/remote-storage/local.driver';
-import { S3Driver } from 'src/repositories/remote-storage/s3.driver';
-import { WebDavDriver } from 'src/repositories/remote-storage/webdav.driver';
-import { StorageTargetConfig, StorageTargetSecret } from 'src/types';
+} from 'src/repositories/remote-storage/driver.js';
+import { LocalDriver } from 'src/repositories/remote-storage/local.driver.js';
+import { S3Driver } from 'src/repositories/remote-storage/s3.driver.js';
+import { WebDavDriver } from 'src/repositories/remote-storage/webdav.driver.js';
+import { StorageTargetConfig, StorageTargetSecret } from 'src/types.js';
 
 export type StorageTargetRef = {
   id: string;

@@ -2,13 +2,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { StorageTargetKind } from 'src/enum';
-import { RemoteStorageDriver } from 'src/repositories/remote-storage/driver';
-import { LocalDriver } from 'src/repositories/remote-storage/local.driver';
-import { S3Driver } from 'src/repositories/remote-storage/s3.driver';
-import { WebDavDriver } from 'src/repositories/remote-storage/webdav.driver';
 import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { StorageTargetKind } from 'src/enum.js';
+import { RemoteStorageDriver } from 'src/repositories/remote-storage/driver.js';
+import { LocalDriver } from 'src/repositories/remote-storage/local.driver.js';
+import { S3Driver } from 'src/repositories/remote-storage/s3.driver.js';
+import { WebDavDriver } from 'src/repositories/remote-storage/webdav.driver.js';
 
 // Nextcloud round-trips are considerably slower than S3 or the local filesystem.
 const TIMEOUT = 30_000;

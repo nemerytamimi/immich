@@ -1,4 +1,4 @@
-import { AssetVisibility } from 'src/enum';
+import { AssetVisibility } from 'src/enum.js';
 
 /** Two capture times this close are the same moment, whatever precision each side stored. */
 const SAME_MOMENT_MS = 1000;

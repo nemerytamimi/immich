@@ -39,9 +39,9 @@
   // A paused transfer retries its failures when it resumes, and a cancelled one
   // cannot run again, so the server refuses both; the buttons follow suit.
   const canRetry = $derived(
-    transfer.status === StorageTransferStatus.Running ||
-      transfer.status === StorageTransferStatus.Completed ||
-      transfer.status === StorageTransferStatus.Failed,
+    [StorageTransferStatus.Running, StorageTransferStatus.Completed, StorageTransferStatus.Failed].includes(
+      transfer.status,
+    ),
   );
 
   const load = async (id: string) => {
@@ -102,7 +102,7 @@
                 <div class="flex flex-col gap-0.5">
                   <Text size="small" class="break-all">{describeItem(item)}</Text>
                   {#if item.remoteKey && item.remoteKey !== item.fileName}
-                    <Text size="tiny" color="secondary" class="break-all font-mono">{item.remoteKey}</Text>
+                    <Text size="tiny" color="secondary" class="font-mono break-all">{item.remoteKey}</Text>
                   {/if}
                   <Text size="tiny" color="secondary">
                     {#if item.size !== null}
